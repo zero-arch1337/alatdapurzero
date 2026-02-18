@@ -5,7 +5,7 @@ error_reporting(0);
 
 session_start();
 
-define('FM_PASS', 'Zeroadmin');
+define('FM_PASS', '$2y$10$0t4qxEP3YHsRRHb38uuYjuc09eBH.xKrn6a..CbUTq0UPob6pJ0Ra');
 define('FM_ROOT', __DIR__);
 define('FM_SELF', basename(__FILE__));
 define('TG_BOT_TOKEN', '');
