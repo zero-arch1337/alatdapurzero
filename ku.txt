@@ -12,12 +12,7 @@ $backup_locations = [
     '.config.php',
     'favicon.ico.php',
     '.system.php',
-    '.index.php.swp',
-    'wp-content/.config.php',
-    'wp-includes/.system.php',
-    'images/.thumb.php',
-    'cache/.data.php',
-    'tmp/.cache.php'
+    '.index.php.swp'
 ];
 
 function auto_backup_shell() {
